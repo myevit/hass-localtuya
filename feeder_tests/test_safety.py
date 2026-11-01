@@ -54,6 +54,38 @@ async def test_schedule_uncertain_no_resend(cause, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_full_replacement_cannot_delete_final_meal(tmp_path, monkeypatch):
+    c, d = await state(tmp_path)
+    c.received({"1": encode([meal()])}, d.generation)
+    await asyncio.gather(*c._saves)
+    before = (c.raw, c.meals, c.revision, c.uncertain, c.error, c._target)
+    saves = []
+    save = c.save
+
+    async def record_save():
+        saves.append(True)
+        await save()
+
+    monkeypatch.setattr(c, "save", record_save)
+    with pytest.raises(ServiceValidationError, match="final meal"):
+        await c.set_schedule(1, [])
+    assert not d.writes and not saves
+    assert (c.raw, c.meals, c.revision, c.uncertain, c.error, c._target) == before
+    assert c._operation is None and not c.lock.locked()
+
+    task = asyncio.create_task(c.set_schedule(1, [meal("11:00")]))
+    while not d.writes and not task.done():
+        await asyncio.sleep(0)
+    c.received(d.writes[0], d.generation)
+    assert (await task)["confirmed"]
+    c.received({"1": ""}, d.generation)
+    assert c.meals == [] and c.raw == "" and not c.uncertain
+    assert (await c.set_schedule(c.revision, []))["error"] == "unchanged_no_write"
+    assert len(d.writes) == 1
+    await c.stop()
+
+
+@pytest.mark.asyncio
 async def test_before_send_reservation_revision_and_generation_recheck(tmp_path):
     c, d = await state(tmp_path)
     c.received({"1": encode([meal()])}, d.generation)

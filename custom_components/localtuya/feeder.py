@@ -502,6 +502,10 @@ class FeederCapability:
             raise ServiceValidationError(
                 "No safe baseline or restored snapshot acknowledgement"
             )
+        if self.meals and not meals:
+            raise ServiceValidationError(
+                "Disable the final meal instead of deleting it"
+            )
         if target == self.raw:
             return {
                 "confirmed": False,

@@ -416,31 +416,33 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
         self.is_closing = True
 
-        if self.feeder:
-            await self.feeder.stop()
+        try:
+            if self.feeder:
+                await self.feeder.stop()
+        finally:
+            # Persistence failure must not leave a live connection behind.
+            tasks = [self._task_shutdown_entities, self._task_reconnect, self._task_connect]
+            pending_tasks = [task for task in tasks if task and task.cancel()]
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
 
-        tasks = [self._task_shutdown_entities, self._task_reconnect, self._task_connect]
-        pending_tasks = [task for task in tasks if task and task.cancel()]
-        await asyncio.gather(*pending_tasks, return_exceptions=True)
+            # Close subdevices first, to prevent them try to reconnect
+            # after gateway disconnected.
+            for subdevice in self.sub_devices.values():
+                await subdevice.close()
 
-        # Close subdevices first, to prevent them try to reconnect
-        # after gateway disconnected.
-        for subdevice in self.sub_devices.values():
-            await subdevice.close()
+            if self._unsub_new_entity:
+                self._unsub_new_entity()
+                self._unsub_new_entity = None
 
-        if self._unsub_new_entity:
-            self._unsub_new_entity()
-            self._unsub_new_entity = None
+            if self._unsub_refresh:
+                self._unsub_refresh()
+                self._unsub_refresh = None
 
-        if self._unsub_refresh:
-            self._unsub_refresh()
-            self._unsub_refresh = None
+            await self.abort_connect()
 
-        await self.abort_connect()
-
-        if self.gateway:
-            self.gateway.filter_subdevices()
-        self.debug("Closed connection", force=True)
+            if self.gateway:
+                self.gateway.filter_subdevices()
+            self.debug("Closed connection", force=True)
 
     async def set_status(self):
         """Send self._pending_status payload to device."""

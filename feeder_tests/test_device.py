@@ -1,5 +1,6 @@
 """Device lifecycle boundaries use real native coordinator, no sockets."""
 
+import asyncio
 from types import SimpleNamespace
 import pytest
 from homeassistant.core import HomeAssistant
@@ -50,6 +51,49 @@ async def test_device_owns_capability_and_blocks_raw_actuation_bypass(tmp_path):
     assert dev.feeder.revision == 1
     await dev.close()
     assert dev.feeder.closed and not dev.feeder._saves
+
+
+@pytest.mark.asyncio
+async def test_close_cleans_up_when_feeder_store_fails(tmp_path, monkeypatch):
+    hass = HomeAssistant(str(tmp_path))
+    dev = device(hass)
+    await dev.feeder.start()
+    # A persisted reservation must stay fail-closed across a failed shutdown save.
+    dev.feeder.feed_uncertain = True
+    await dev.feeder.save()
+    proto = TuyaProtocol(dev.id, dev.local_key, 3.5, False, dev)
+    transport = Transport()
+    proto.connection_made(transport)
+    dev._interface = proto
+    tasks = [asyncio.create_task(asyncio.Event().wait()) for _ in range(3)]
+    dev._task_shutdown_entities, dev._task_reconnect, dev._task_connect = tasks
+    await asyncio.sleep(0)
+    failure = OSError("synthetic full disk: feeder uncertainty not saved")
+
+    async def fail(_):
+        raise failure
+
+    monkeypatch.setattr(dev.feeder.store, "async_save", fail)
+    try:
+        with pytest.raises(OSError) as caught:
+            await dev.close()
+        assert caught.value is failure
+        assert all(task.cancelled() for task in tasks)
+        assert dev.is_closing and dev.feeder.closed and dev.feeder.feed_uncertain
+        assert transport.closing and dev._interface is None
+        await dev.close()
+        assert transport.closing and dev._interface is None and not transport.writes
+        restored = type(dev.feeder)(dev)
+        await restored.start()
+        assert restored.feed_uncertain
+        with pytest.raises(ServiceValidationError):
+            await restored.feed(8, True)
+        await restored.stop()
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        transport.close()
 
 
 @pytest.mark.asyncio
