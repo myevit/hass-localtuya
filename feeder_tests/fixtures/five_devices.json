@@ -1,0 +1,293 @@
+[
+  {
+    "device_id": "synthetic-1",
+    "dps_strings": [
+      "1 ( code: switch_1 , value: ? )",
+      "11 ( code: countdown_1 , value: ? )",
+      "101 ( code: randomTime , value: ? )",
+      "102 ( code: cycleTime , value: ? )",
+      "103 ( code: normalTime , value: ? )"
+    ],
+    "enable_debug": false,
+    "entities": [
+      {
+        "device_class": "outlet",
+        "entity_category": "None",
+        "friendly_name": "Synthetic 1 DP1",
+        "icon": "",
+        "id": "1",
+        "platform": "switch"
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 1 DP11",
+        "icon": "mdi:timer",
+        "id": "11",
+        "max_value": 86400,
+        "min_value": 0,
+        "platform": "number",
+        "scaling": 1.0,
+        "step_size": 1,
+        "unit_of_measurement": "s"
+      }
+    ],
+    "friendly_name": "Synthetic 1",
+    "host": "192.0.2.1",
+    "local_key": "0123456789abcdef",
+    "model": "Synthetic socket",
+    "node_id": null,
+    "product_key": "",
+    "protocol_version": "3.3"
+  },
+  {
+    "device_id": "synthetic-2",
+    "dps_strings": [
+      "1 ( code: switch_1 , value: ? )",
+      "11 ( code: countdown_1 , value: ? )",
+      "101 ( code: randomTime , value: ? )",
+      "102 ( code: cycleTime , value: ? )",
+      "103 ( code: normalTime , value: ? )"
+    ],
+    "enable_debug": false,
+    "entities": [
+      {
+        "device_class": "outlet",
+        "entity_category": "None",
+        "friendly_name": "Synthetic 2 DP1",
+        "icon": "",
+        "id": "1",
+        "platform": "switch"
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 2 DP11",
+        "icon": "mdi:timer",
+        "id": "11",
+        "max_value": 86400,
+        "min_value": 0,
+        "platform": "number",
+        "scaling": 1.0,
+        "step_size": 1,
+        "unit_of_measurement": "s"
+      }
+    ],
+    "friendly_name": "Synthetic 2",
+    "host": "192.0.2.2",
+    "local_key": "0123456789abcdef",
+    "model": "Synthetic socket",
+    "node_id": null,
+    "product_key": "",
+    "protocol_version": "3.3"
+  },
+  {
+    "device_id": "synthetic-3",
+    "dps_strings": [
+      "1 ( code: switch_1 , value: ? )",
+      "11 ( code: countdown_1 , value: ? )",
+      "101 ( code: randomTime , value: ? )",
+      "102 ( code: cycleTime , value: ? )",
+      "103 ( code: normalTime , value: ? )"
+    ],
+    "enable_debug": false,
+    "entities": [
+      {
+        "device_class": "outlet",
+        "entity_category": "None",
+        "friendly_name": "Synthetic 3 DP1",
+        "icon": "",
+        "id": "1",
+        "platform": "switch"
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 3 DP11",
+        "icon": "mdi:timer",
+        "id": "11",
+        "max_value": 86400,
+        "min_value": 0,
+        "platform": "number",
+        "scaling": 1.0,
+        "step_size": 1,
+        "unit_of_measurement": "s"
+      }
+    ],
+    "friendly_name": "Synthetic 3",
+    "host": "192.0.2.3",
+    "local_key": "0123456789abcdef",
+    "model": "Synthetic socket",
+    "node_id": null,
+    "product_key": "",
+    "protocol_version": "3.3"
+  },
+  {
+    "device_id": "synthetic-4",
+    "dps_strings": [
+      "1 ( code: switch_1 , value: ? )",
+      "11 ( code: countdown_1 , value: ? )",
+      "101 ( code: randomTime , value: ? )",
+      "102 ( code: cycleTime , value: ? )",
+      "103 ( code: normalTime , value: ? )"
+    ],
+    "enable_debug": false,
+    "entities": [
+      {
+        "device_class": "outlet",
+        "entity_category": "None",
+        "friendly_name": "Synthetic 4 DP1",
+        "icon": "",
+        "id": "1",
+        "platform": "switch"
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 4 DP11",
+        "icon": "mdi:timer",
+        "id": "11",
+        "max_value": 86400,
+        "min_value": 0,
+        "platform": "number",
+        "scaling": 1.0,
+        "step_size": 1,
+        "unit_of_measurement": "s"
+      }
+    ],
+    "friendly_name": "Synthetic 4",
+    "host": "192.0.2.4",
+    "local_key": "0123456789abcdef",
+    "model": "Synthetic socket",
+    "node_id": null,
+    "product_key": "",
+    "protocol_version": "3.3"
+  },
+  {
+    "device_id": "synthetic-5",
+    "dps_strings": [
+      "1 ( code: meal_plan , value: ? )",
+      "2 ( code: quick_feed , value: ? )",
+      "3 ( code: manual_feed , value: ? )",
+      "4 ( code: feed_state , value: ? )",
+      "10 ( code: battery_percentage , value: ? )",
+      "11 ( code: charge_state , value: ? )",
+      "12 ( code: cover_state , value: ? )",
+      "13 ( code: fault , value: ? )",
+      "14 ( code: feed_report , value: ? )",
+      "17 ( code: light , value: ? )",
+      "23 ( code: slow_feed , value: ? )",
+      "24 ( code: factory_reset , value: ? )",
+      "26 ( code: weight_calibrate , value: ? )",
+      "101 ( code: power_mode , value: ? )"
+    ],
+    "enable_debug": false,
+    "entities": [
+      {
+        "entity_category": "None",
+        "friendly_name": "Synthetic 5 DP3",
+        "icon": "mdi:bowl",
+        "id": "3",
+        "is_passive_entity": false,
+        "max_value": 60.0,
+        "min_value": 1.0,
+        "platform": "number",
+        "restore_on_reconnect": false,
+        "scaling": 1.0,
+        "step_size": 1.0
+      },
+      {
+        "device_class": "battery",
+        "entity_category": "diagnostic",
+        "friendly_name": "Synthetic 5 DP10",
+        "icon": "",
+        "id": "10",
+        "platform": "sensor",
+        "scaling": 1.0,
+        "state_class": "measurement",
+        "unit_of_measurement": "%"
+      },
+      {
+        "device_class": "problem",
+        "entity_category": "diagnostic",
+        "friendly_name": "Synthetic 5 DP13",
+        "icon": "",
+        "id": "13",
+        "platform": "binary_sensor",
+        "reset_timer": 0.0,
+        "state_on": "1"
+      },
+      {
+        "entity_category": "diagnostic",
+        "friendly_name": "Synthetic 5 DP14",
+        "icon": "mdi:counter",
+        "id": "14",
+        "platform": "sensor",
+        "state_class": "measurement"
+      },
+      {
+        "brightness_lower": 10,
+        "brightness_upper": 1000,
+        "color_mode_set": "0",
+        "color_temp_max_kelvin": 6500,
+        "color_temp_min_kelvin": 2700,
+        "color_temp_reverse": false,
+        "entity_category": "None",
+        "friendly_name": "Synthetic 5 DP17",
+        "icon": "",
+        "id": "17",
+        "music_mode": false,
+        "platform": "light",
+        "scene_values": {}
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 5 DP23",
+        "icon": "mdi:speedometer-slow",
+        "id": "23",
+        "is_passive_entity": false,
+        "platform": "switch",
+        "restore_on_reconnect": false
+      },
+      {
+        "entity_category": "config",
+        "friendly_name": "Synthetic 5 DP24",
+        "icon": "mdi:cog-counterclockwise",
+        "id": "24",
+        "platform": "button"
+      },
+      {
+        "entity_category": "None",
+        "friendly_name": "Synthetic 5 DP2",
+        "icon": "",
+        "id": "2",
+        "platform": "button"
+      },
+      {
+        "entity_category": "None",
+        "friendly_name": "Synthetic 5 DP4",
+        "id": "4",
+        "platform": "sensor"
+      },
+      {
+        "device_class": "battery_charging",
+        "entity_category": "diagnostic",
+        "friendly_name": "Synthetic 5 DP11",
+        "id": "11",
+        "platform": "binary_sensor",
+        "reset_timer": 0.0,
+        "state_on": "True"
+      },
+      {
+        "entity_category": "diagnostic",
+        "friendly_name": "Synthetic 5 DP101",
+        "id": "101",
+        "platform": "sensor"
+      }
+    ],
+    "friendly_name": "Synthetic 5",
+    "host": "192.0.2.5",
+    "local_key": "0123456789abcdef",
+    "manual_dps_strings": "2,4,11,12,101",
+    "model": "M&C Smart Feeder Titan WIFI",
+    "node_id": null,
+    "protocol_version": "3.5",
+    "product_key": "gh0lmtxb5fumm0ad"
+  }
+]

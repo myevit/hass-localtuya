@@ -141,3 +141,24 @@ options flow above; no stopped-storage proposal or apply tools are required.
 
 No production HA files, services, device connections or schedules were changed
 by preparing this candidate.
+
+## Offline contribution qualification
+
+Run `python -m pytest feeder_tests -q --disable-socket --allow-unix-socket`
+with `requirements_feeder_test.txt` in the pinned Python 3.14 environment. CI runs
+this suite, including the five-device supported-options migration, Store import,
+startup/reconnect write prohibition and registry-identity regression. The fixture
+uses synthetic identities, documentation-only IP addresses and dummy keys; it
+retains platform and DP parameters. Ordinary device editing is tested separately
+through Home Assistant's real options manager. These tests do not qualify a live
+Core restart, HACS installation or physical dispensing.
+
+Ordinary edits retain the native profile and legacy Store reference. A selected
+but invalid profile is a setup error, not permission to fall back to raw feeder
+control. Correct its model, product, protocol and quantity mapping before retrying.
+An unselected profile keeps normal LocalTuya behavior.
+
+This contribution was developed with AI assistance (Hermes Agent by Nous Research,
+OpenAI GPT-6.1). It needs independent maintainer review before upstream acceptance.
+The integration remains GPL-3.0; adapted MIT material is attributed in
+`NOTICE-feeder`. No service-contract change is introduced by these audit fixes.
