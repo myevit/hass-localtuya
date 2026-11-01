@@ -25,7 +25,7 @@ jobs:
       - name: Python formatting
         run: python -m black --check custom_components/localtuya
       - name: Real HA services and encrypted protocol, no TCP or UDP
-        run: python -m pytest feeder_tests -q --disable-socket --allow-unix-socket
+        run: python -m pytest feeder_tests protocol_tests -q --disable-socket --allow-unix-socket
   upstream-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 15
