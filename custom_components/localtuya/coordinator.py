@@ -159,8 +159,13 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         await self._interface.set_dps_once(dps, on_attempt)
 
     def _guard_feeder_raw(self, dps):
-        if self.feeder and (
-            self.feeder.lock.locked() or any(str(dp) in ("1", "2", "3") for dp in dps)
+        if self._device_config.as_dict().get("feeder_profile") not in (
+            None,
+            "",
+            "none",
+        ) and (
+            (self.feeder and self.feeder.lock.locked())
+            or any(str(dp) in ("1", "2", "3") for dp in dps)
         ):
             from homeassistant.exceptions import ServiceValidationError
 

@@ -544,7 +544,13 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                         return self.async_create_entry(title="", data={})
 
                     # We will restore device details if it's already existed!
-                    for res_conf in [CONF_GATEWAY_ID, CONF_MODEL, CONF_PRODUCT_KEY]:
+                    for res_conf in [
+                        CONF_GATEWAY_ID,
+                        CONF_MODEL,
+                        CONF_PRODUCT_KEY,
+                        CONF_FEEDER_PROFILE,
+                        "feeder_legacy_entry_id",
+                    ]:
                         if dev_config.get(res_conf):
                             self.device_data[res_conf] = dev_config.get(res_conf)
 
@@ -843,7 +849,11 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                 self.device_data[CONF_ENTITIES].append(entity)
                 if len(self.entities) == len(self.device_data[CONF_ENTITIES]):
                     # finished editing device. Let's store the new config entry....
-                    if self.device_data.get(CONF_FEEDER_PROFILE) == "ft11w":
+                    if self.device_data.get(CONF_FEEDER_PROFILE) not in (
+                        None,
+                        "",
+                        "none",
+                    ):
                         from .core.ha_entities.pet_feeders import (
                             supported,
                             with_native_entities,

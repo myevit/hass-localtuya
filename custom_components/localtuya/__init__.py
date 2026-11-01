@@ -341,6 +341,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
         return
 
+    from .core.ha_entities.pet_feeders import supported
+    from homeassistant.exceptions import ConfigEntryError
+
+    for config in entry.data[CONF_DEVICES].values():
+        if config.get("feeder_profile") not in (None, "", "none") and not supported(
+            config
+        ):
+            raise ConfigEntryError(
+                "Selected feeder profile is invalid for the saved model, product, "
+                "protocol or quantity mapping; correct the device configuration "
+                "before enabling native feeder control. DP1/2/3 remain blocked."
+            )
+
     region = entry.data[CONF_REGION]
     client_id = entry.data[CONF_CLIENT_ID]
     secret = entry.data[CONF_CLIENT_SECRET]
