@@ -37,7 +37,10 @@
         }
     },
     "options": {
+        "error": {"unsupported_feeder_profile": "The native FT-11W profile requires the exact model, protocol, DP codes and quantity schema."},
+        "abort": {"unsupported_feeder_profile": "Unsupported native FT-11W configuration; nothing was changed."},
         "step": {
+            "configure_device": {"data": {"feeder_profile": "Native feeder profile (explicit opt-in)"}},
             "init": {
                 "title": "LocalTuya Configuration",
                 "description": "Please select the desired actionSSSS.",

@@ -1,0 +1,21 @@
+name: Native feeder offline qualification
+on:
+  pull_request:
+  push:
+    branches: [feat/ft11w-feeder]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-ha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements_feeder_test.txt
+      - run: python -m pip install -r requirements_feeder_test.txt
+      - name: Real HA services and encrypted protocol, no TCP or UDP
+        run: python -m pytest feeder_tests -q --disable-socket --allow-unix-socket

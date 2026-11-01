@@ -58,6 +58,7 @@ from .const import (
     CONF_LOCAL_KEY,
     CONF_MANUAL_DPS,
     CONF_MODEL,
+    CONF_FEEDER_PROFILE,
     CONF_NODE_ID,
     CONF_NO_CLOUD,
     CONF_PRODUCT_KEY,
@@ -155,6 +156,7 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Optional(CONF_RESET_DPIDS): str,
         vol.Optional(CONF_DEVICE_SLEEP_TIME): int,
         vol.Optional(CONF_NODE_ID, default=None): vol.Any(None, cv.string),
+        vol.Optional(CONF_FEEDER_PROFILE, default="none"): vol.In(["none", "ft11w"]),
     }
 )
 
@@ -636,6 +638,7 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
             category = self.cloud_data.device_list[dev_id].get(TUYA_CATEGORY, "")
 
         localtuya_data = {
+            **self.device_data,
             DEVICE_CLOUD_DATA: device_data,
             CONF_DPS_STRINGS: self.dps_strings,
             CONF_FRIENDLY_NAME: self.device_data.get(CONF_FRIENDLY_NAME),
@@ -678,6 +681,20 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                 }
 
                 dev_id = self.device_data.get(CONF_DEVICE_ID)
+
+                if config.get(CONF_FEEDER_PROFILE) == "ft11w":
+                    from .core.ha_entities.pet_feeders import (
+                        supported,
+                        with_native_entities,
+                    )
+
+                    if not supported(config):
+                        return self.async_show_form(
+                            step_id="pick_entity_type",
+                            data_schema=PICK_ENTITY_SCHEMA,
+                            errors={"base": "unsupported_feeder_profile"},
+                        )
+                    config[CONF_ENTITIES] = with_native_entities(config)
 
                 new_data = self.config_entry.data.copy()
                 new_data[CONF_DEVICES].update({dev_id: config})
@@ -767,6 +784,17 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                 self.device_data[CONF_ENTITIES].append(entity)
                 if len(self.entities) == len(self.device_data[CONF_ENTITIES]):
                     # finished editing device. Let's store the new config entry....
+                    if self.device_data.get(CONF_FEEDER_PROFILE) == "ft11w":
+                        from .core.ha_entities.pet_feeders import (
+                            supported,
+                            with_native_entities,
+                        )
+
+                        if not supported(self.device_data):
+                            return self.async_abort(reason="unsupported_feeder_profile")
+                        self.device_data[CONF_ENTITIES] = with_native_entities(
+                            self.device_data
+                        )
                     dev_id = self.device_data[CONF_DEVICE_ID]
                     new_data = self.config_entry.data.copy()
                     entry_id = self.config_entry.entry_id
@@ -781,6 +809,10 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                         for ent in er.async_entries_for_config_entry(ent_reg, entry_id)
                         if dev_id in ent.unique_id
                         and ent.original_name not in entitesNames
+                        and not (
+                            self.device_data.get(CONF_FEEDER_PROFILE) == "ft11w"
+                            and ent.unique_id == f"local_{dev_id}_last_feed"
+                        )
                     }
                     for entity_id in reg_entities.values():
                         ent_reg.async_remove(entity_id)

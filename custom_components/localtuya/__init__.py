@@ -196,6 +196,10 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
     hass.services.async_register(DOMAIN, SERVICE_RELOAD, _handle_reload)
 
+    from .feeder import register_services
+
+    register_services(hass)
+
     hass.services.async_register(
         DOMAIN, SERVICE_SET_DP, _handle_set_dp, schema=SERVICE_SET_DP_SCHEMA
     )
@@ -391,6 +395,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         return connect_to_devices
 
     connect_to_devices = _setup_devices(entry.data[CONF_DEVICES])
+
+    for dev in connect_to_devices:
+        if dev.feeder:
+            await dev.feeder.start()
 
     await async_remove_orphan_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS.values())

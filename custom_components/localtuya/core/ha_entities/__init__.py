@@ -79,6 +79,11 @@ DEVICE_CLOUD_DATA = "device_cloud_data"
 
 def gen_localtuya_entities(localtuya_data: dict, tuya_category: str) -> list[dict]:
     """Return localtuya entities using the data that provided from TUYA"""
+    from .pet_feeders import supported, with_native_entities
+
+    if supported(localtuya_data):
+        return with_native_entities(localtuya_data)
+
     detected_dps: list = localtuya_data.get(CONF_DPS_STRINGS)
 
     if not tuya_category or not detected_dps:
@@ -169,6 +174,10 @@ def gen_localtuya_entities(localtuya_data: dict, tuya_category: str) -> list[dic
 
     # convert to list of configs
     list_entities = [entities.get(id) for id in sorted_ids]
+
+    candidate = {**localtuya_data, "entities": list_entities}
+    if supported(candidate):
+        return with_native_entities(candidate)
 
     _LOGGER.debug(f"{device_name}: Configured entities: {list_entities}")
     # return []
