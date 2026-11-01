@@ -281,14 +281,73 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
         configure_menu = CONFIGURE_MENU.copy()
+        if self.config_entry.data[CONF_DEVICES]:
+            configure_menu.append("configure_feeder")
         # Remove Reconfigure existing device option if there is no existed devices.
         if not self.config_entry.data[CONF_DEVICES]:
             configure_menu.pop(configure_menu.index(CONF_EDIT_DEVICE))
 
-        if not self.config_entry.data.get(CONF_NO_CLOUD, True):
+        if not self.config_entry.disabled_by and not self.config_entry.data.get(
+            CONF_NO_CLOUD, True
+        ):
             self.hass.async_create_task(self.cloud_data.async_get_devices_list())
 
         return self.async_show_menu(step_id="init", menu_options=configure_menu)
+
+    async def async_step_configure_feeder(self, user_input=None):
+        """Opt an existing device in without rebuilding its entities or connecting."""
+        from .core.ha_entities.pet_feeders import supported, with_native_entities
+
+        devices = self.config_entry.data[CONF_DEVICES]
+        if user_input is not None:
+            dev_id = user_input[SELECTED_DEVICE]
+            if dev_id not in devices:
+                return self.async_abort(reason="unsupported_feeder_profile")
+            config = copy.deepcopy(devices[dev_id])
+            config[CONF_FEEDER_PROFILE] = user_input[CONF_FEEDER_PROFILE]
+            if legacy_id := user_input.get("feeder_legacy_entry_id"):
+                legacy = self.hass.config_entries.async_get_entry(legacy_id)
+                if (
+                    legacy is None
+                    or legacy.domain != "tuya_feeder"
+                    or not legacy.disabled_by
+                    or legacy.data.get(CONF_DEVICE_ID) != dev_id
+                    or legacy.data.get("localtuya_entry_id") != self._entry_id
+                ):
+                    return self.async_abort(reason="unsupported_feeder_profile")
+                config["feeder_legacy_entry_id"] = legacy_id
+            if not supported(config):
+                return self.async_abort(reason="unsupported_feeder_profile")
+            config[CONF_ENTITIES] = with_native_entities(config)
+            new_data = copy.deepcopy(dict(self.config_entry.data))
+            new_data[CONF_DEVICES][dev_id] = config
+            return self._update_entry(new_data)
+
+        return self.async_show_form(
+            step_id="configure_feeder",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(SELECTED_DEVICE): vol.In(
+                        {
+                            dev_id: dev.get(CONF_FRIENDLY_NAME, dev_id)
+                            for dev_id, dev in devices.items()
+                        }
+                    ),
+                    vol.Required(CONF_FEEDER_PROFILE): vol.In(["ft11w"]),
+                    vol.Optional("feeder_legacy_entry_id"): vol.In(
+                        {
+                            entry.entry_id: entry.title
+                            for entry in self.hass.config_entries.async_entries(
+                                "tuya_feeder"
+                            )
+                            if entry.disabled_by
+                            and entry.data.get("localtuya_entry_id") == self._entry_id
+                            and entry.data.get(CONF_DEVICE_ID) in devices
+                        }
+                    ),
+                }
+            ),
+        )
 
     async def async_step_configure_cloud(self, user_input=None):
         """Handle the initial step."""

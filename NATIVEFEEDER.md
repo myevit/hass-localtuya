@@ -91,55 +91,54 @@ The upstream protocol stream parser is otherwise unchanged. Packet loss or
 existing framing limitations can produce an honest unconfirmed result; this
 feature deliberately does not hide them with a physical-command retry.
 
-## Migration: prepared only, no apply mode
+## Supported configuration and migration
 
-`scripts/prepare_feeder_migration.py` reads a private **exported bundle**, validates
-bindings/schema/provenance and produces a new mode-0600 proposal. It cannot
-replace a core file, write to `.storage`, overwrite a proposal, or call HA. The
-CLI has no apply option. Only synthetic CLI fixtures have been exercised here.
+For an existing device, use the integration's **Configure → Enable native feeder
+profile** options menu. Select the configured device and explicitly choose
+`ft11w`. This validates the saved model/DP/quantity schema and preserves every
+existing entity setting and all other devices. It adds the DP1 sensor only if
+absent. It does not connect, discover, or send a feed/schedule during the flow.
+Submitting to an enabled entry triggers its normal LocalTuya reload; a disabled
+entry remains disabled until enabled through HA.
 
-The bundle has these keys:
+An optional **Disabled legacy entry to restore** selector records the existing
+one-time migration source. It must be disabled, match the selected device, and
+reference this LocalTuya config entry. On first native setup, the existing
+capability copies the legacy HA Stores using HA's storage API. It preserves the
+original receipt time, revision, last-feed time and uncertainty, marking the
+plan **restored**, not freshly received. Existing/corrupt native state is never
+overwritten. Do not remove the legacy config entry until this import succeeds;
+removing it invokes the legacy integration's Store cleanup when installed.
 
-- `core_config_entries`: an exported HA config-entries Store envelope;
-- `entity_registry`: an exported entity-registry Store envelope;
-- `legacy_schedule`: `tuya_feeder.<legacy-entry-id>` envelope (version 1);
-- `legacy_feed`: `tuya_feeder.feed.<legacy-entry-id>` envelope, if present;
-- optional `native_store`: if present, preparation refuses to overwrite it.
+A supported staged adoption needs no edits to `core.config_entries` or
+`core.entity_registry`, stopped-file transaction tool, or watchdog override:
 
-Use the CLI's `--help` for identifiers/output flags. Do not include a real
-bundle or proposal in a public commit. The result includes the exact proposed
-device config, validated state and registry entity-ID mapping; it is not a
-permission to apply those changes. It also protects all unrelated devices,
-registry entries, helpers, automations and unreviewed scripts.
+1. Back up the configuration, source, stores, registry customization and callers.
+   Suspend feeding controls and retire unreviewed raw-actuation scripts.
+2. Disable the legacy entry and LocalTuya entry through HA. Check unload results;
+   failed unload is not permission to replace live code.
+3. Install the reviewed fork through HACS while entries are disabled. If complete
+   retirement in one Core restart is required, uninstall the old legacy domain's
+   code before restart but retain its disabled config entry temporarily as the
+   migration source. A disabled entry alone does not unregister domain services.
+4. Restart Core with approval. With the old domain absent, its services cannot
+   register. The temporarily orphaned disabled entry can cause an expected
+   integration-not-found diagnostic until it is removed.
+5. Run the supported options flow on the disabled LocalTuya entry, selecting the
+   legacy source. Enable LocalTuya and verify the imported native state and all
+   other devices. This is a separate integration lifecycle, not another Core restart.
+6. Remove the disabled legacy entry through HA's config-entry API. Rename the new
+   native entities to the now-vacated old entity IDs using the entity-registry API.
+   Never mutate platform or unique IDs. Reapply reviewed customization explicitly.
+7. Install/verify the paired native card and retire passive capture scaffolding
+   using supported YAML configuration/reloads. Keep the quantity helper and layout.
+   Do not write a schedule merely to manufacture a fresh DP1 receipt.
+8. Verify native/legacy domain services, IDs, provenance, UI and unrelated devices.
+   Physical feeds, schedule edits and clock actions need separate approval.
 
-A staged, reviewed adoption must:
-
-1. Back up/hash current config, registry, stores, scripts and card/callers.
-2. Resolve each old plan/last-feed entity ID to its new LocalTuya unique ID.
-   Archive the disabled legacy entity ID before assigning that desired ID to
-   the native entity; do not hand-edit unique IDs or clobber an existing native
-   registry row. Preserve helper IDs and automation references.
-3. Disable the legacy `tuya_feeder` config entry before enabling the native
-   profile. Native setup/action readiness rejects a second active owner.
-4. Apply the reviewed target-device config only, including optional
-   `feeder_legacy_entry_id` from the proposal. On first native startup, a disabled,
-   matching legacy entry can provide a bounded one-time Store migration. Native
-   state must be absent; corrupt/newer/existing destinations are not replaced.
-   Preserve source receipt time/revision and both uncertainty guards. Missing
-   legacy feed state becomes unknown, not permission to feed.
-5. Install the reviewed candidate and paired native card using separately
-   approved deployment procedures. Verify restored read-only state, device-page
-   last feed, typed-service registration, unload/reload cleanup and all other
-   LocalTuya devices before physical acceptance.
-6. Keep raw actuation scripts disabled. A known legacy label quantity **4**
-   versus actual DP3 quantity **8** remains unresolved; do not guess the intended
-   dose, silently rewrite it, or re-enable it during migration.
-7. Obtain explicit physical approval for one confirmed feed/schedule trial.
-   Observe protocol and physical outcomes separately; never resend an unknown.
-8. Only after acceptance retire the legacy integration/domain, fallback card
-   paths and stale scripts. Rollback restores archived configs/entities/stores,
-   not commands. Frontend migration, production activation, legacy retirement
-   and hardware qualification are separate remaining gates.
+`scripts/prepare_feeder_migration.py` remains an offline proposal-only diagnostic,
+not the supported deployment path. It has no apply mode and is not required by
+this options-flow migration. Do not publish real bundles or source stores.
 
 No production HA files, services, device connections or schedules were changed
 by preparing this candidate.

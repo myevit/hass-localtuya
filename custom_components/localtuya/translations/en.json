@@ -61,7 +61,8 @@
                 "menu_options": {
                     "add_device": "Add new device",
                     "edit_device": "Reconfigure existing device",
-                    "configure_cloud": "Manage Cloud API account"
+                    "configure_cloud": "Manage Cloud API account",
+                    "configure_feeder": "Enable native feeder profile"
                 }
             },
             "add_device": {
@@ -77,6 +78,15 @@
                 "description": "Select the device you wish to re-configure.",
                 "data": {
                     "selected_device": "Configured devices"
+                }
+            },
+            "configure_feeder": {
+                "title": "Enable native feeder profile",
+                "description": "Opt in an existing device without changing its connection or existing entity settings. The integration will reload; no feed or schedule is sent.",
+                "data": {
+                    "selected_device": "Configured device",
+                    "feeder_profile": "Native feeder profile (explicit opt-in)",
+                    "feeder_legacy_entry_id": "Disabled legacy entry to restore (optional)"
                 }
             },
             "configure_cloud": {
