@@ -323,41 +323,57 @@ class MessageDispatcher(ContextualLogger):
     def add_data(self, data: bytes):
         """Add new data to the buffer and try to parse messages."""
         self.buffer += data
-        prefixes_bin = {prefix.bin for prefix in Affix.prefixes}
-        suffixes_bin = {suffix.bin for suffix in Affix.suffixes}
-        header_len = struct.calcsize(MessagesFormat.END_55AA)
         while self.buffer:
-
-            # Check if enough data for measage header
-            if len(self.buffer) < header_len:
+            positions = [self.buffer.find(prefix.bin) for prefix in Affix.prefixes]
+            positions = [index for index in positions if index >= 0]
+            if not positions:
+                # Retain only a possible split prefix, not arbitrary noise.
+                self.buffer = next(
+                    (
+                        self.buffer[-size:]
+                        for size in range(min(3, len(self.buffer)), 0, -1)
+                        if any(
+                            prefix.bin.startswith(self.buffer[-size:])
+                            for prefix in Affix.prefixes
+                        )
+                    ),
+                    b"",
+                )
                 break
-
-            if (prefix_index := self.buffer.find(Affix.prefix_55aa.bin)) == -1:
-                prefix_index = self.buffer.find(Affix.prefix_6699.bin)
-
-            if prefix_index == -1:
-                self.debug(f"Invalid prefix: {self.buffer!r}")
-                self.buffer = b""
-            elif self.buffer[:4] not in (prefixes_bin) and prefix_index > 0:
-                self.debug(f"prefix is not at the end: {self.buffer}")
-                self.buffer = self.buffer[prefix_index:]
-
-            if (suffix_index := self.buffer.find(Affix.suffix_55aa.bin)) == -1:
-                suffix_index = self.buffer.find(Affix.suffix_6699.bin)
-
-            # if not any (self.buffer.endswith(suffix) for suffix in suffixes)
-            if suffix_index == -1:
-                self.debug(f"Invalid suffix: {self.buffer!r}")
-                self.buffer = b""
-            if not any(self.buffer.endswith(suffix_bin) for suffix_bin in suffixes_bin):
-                self.debug(f"suffix is not at the end: {self.buffer!r}")
+            self.buffer = self.buffer[min(positions) :]
+            is_6699 = self.buffer.startswith(Affix.prefix_6699.bin)
+            header_fmt = (
+                MessagesFormat.HEADER_6699 if is_6699 else MessagesFormat.HEADER_55AA
+            )
+            if len(self.buffer) < struct.calcsize(header_fmt):
                 break
-                # self.buffer = self.buffer[: suffix_index + 4]
-
-            header = parser.parse_header(self.buffer, logger=self)
+            try:
+                header = parser.parse_header(self.buffer, logger=self)
+            except parser.DecodeError:
+                self.buffer = self.buffer[1:]
+                continue
+            end_fmt = (
+                MessagesFormat.END_6699
+                if is_6699
+                else (
+                    MessagesFormat.END_HMAC
+                    if self.version >= 3.4
+                    else MessagesFormat.END_55AA
+                )
+            )
+            # 6699 counts its nonce, but not the suffix, in the declared length.
+            minimum = struct.calcsize(end_fmt) + struct.calcsize(MessagesFormat.RETCODE)
+            if is_6699:
+                minimum += 12 - len(Affix.suffix_6699.bin)
+            if header.length < minimum:
+                self.buffer = self.buffer[1:]
+                continue
             if len(self.buffer) < header.total_length:
-                self.debug(f"Not enough data to parse: {self.buffer}")
-                break  # not enough data.
+                break
+            suffix = Affix.suffix_6699 if is_6699 else Affix.suffix_55aa
+            if self.buffer[header.total_length - 4 : header.total_length] != suffix.bin:
+                self.buffer = self.buffer[1:]
+                continue
 
             hmac_key = self.local_key if self.version >= 3.4 else None
             no_retcode = False
