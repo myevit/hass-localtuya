@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from types import SimpleNamespace
 
 import pytest
 from custom_components.localtuya.core import pytuya
@@ -73,7 +72,7 @@ async def test_exact_frame_hook_does_not_replay_merged_dp1():
     for dps in ({"1": ""}, {"4": "standby", "13": 0}, {"1": ""}):
         payload = json.dumps({"dps": dps}).encode()
         proto.dispatcher._dispatch(
-            SimpleNamespace(seqno=0, cmd=pytuya.CMDType.STATUS, payload=payload)
+            pytuya.TuyaMessage(0, pytuya.CMDType.STATUS, 0, payload, 0)
         )
     assert [frame[0] for frame in listener.frames] == [
         {"1": ""},

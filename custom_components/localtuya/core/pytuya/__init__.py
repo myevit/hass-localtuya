@@ -361,18 +361,27 @@ class MessageDispatcher(ContextualLogger):
 
             hmac_key = self.local_key if self.version >= 3.4 else None
             no_retcode = False
-            msg = parser.unpack_message(
-                self.buffer,
-                header=header,
-                hmac_key=hmac_key,
-                no_retcode=no_retcode,
-                logger=self,
-            )
+            frame = self.buffer[: header.total_length]
             self.buffer = self.buffer[header.total_length :]
+            try:
+                msg = parser.unpack_message(
+                    frame,
+                    header=header,
+                    hmac_key=hmac_key,
+                    no_retcode=no_retcode,
+                    logger=self,
+                )
+            except parser.DecodeError:
+                self.debug("Discarding invalid message")
+                continue
             self._dispatch(msg)
 
     def _dispatch(self, msg: TuyaMessage):
         """Dispatch a message to someone that is listening."""
+
+        if not msg.crc_good:
+            self.debug("Discarding message with invalid integrity")
+            return
 
         if self.callback_frame:
             self.callback_frame(msg)
