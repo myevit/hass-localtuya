@@ -421,7 +421,11 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                 await self.feeder.stop()
         finally:
             # Persistence failure must not leave a live connection behind.
-            tasks = [self._task_shutdown_entities, self._task_reconnect, self._task_connect]
+            tasks = [
+                self._task_shutdown_entities,
+                self._task_reconnect,
+                self._task_connect,
+            ]
             pending_tasks = [task for task in tasks if task and task.cancel()]
             await asyncio.gather(*pending_tasks, return_exceptions=True)
 
