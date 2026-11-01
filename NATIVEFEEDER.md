@@ -136,9 +136,8 @@ A supported staged adoption needs no edits to `core.config_entries` or
 8. Verify native/legacy domain services, IDs, provenance, UI and unrelated devices.
    Physical feeds, schedule edits and clock actions need separate approval.
 
-`scripts/prepare_feeder_migration.py` remains an offline proposal-only diagnostic,
-not the supported deployment path. It has no apply mode and is not required by
-this options-flow migration. Do not publish real bundles or source stores.
+Do not publish real device bundles or source stores. Migration uses the supported
+options flow above; no stopped-storage proposal or apply tools are required.
 
 No production HA files, services, device connections or schedules were changed
 by preparing this candidate.
