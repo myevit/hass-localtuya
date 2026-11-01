@@ -261,11 +261,60 @@ async def test_empty_response_and_existing_maximum_length(version, maximum):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("version", [3.1, 3.3, 3.4, 3.5])
+async def test_corrupt_length_does_not_consume_following_authenticated_frame(version):
+    proto, listener = protocol(version)
+    bad = packet(proto, {"1": "bad"}, 6)
+    good = packet(proto, {"1": "good"}, 7)
+    fmt = (
+        pytuya.MessagesFormat.HEADER_6699
+        if version == 3.5
+        else pytuya.MessagesFormat.HEADER_55AA
+    )
+    size = struct.calcsize(fmt)
+    fields = list(struct.unpack(fmt, bad[:size]))
+    fields[-1] = len(bad) + len(good) - size - (4 if version == 3.5 else 0)
+    corrupt = struct.pack(fmt, *fields) + bad[size:]
+    proto.data_received(corrupt + good)
+    assert listener.frames == [{"1": "good"}]
+    assert listener.statuses == [{"1": "good"}]
+    assert proto.dispatcher.buffer == b""
+
+    # Wait for a complete candidate before rejecting its untrusted length.
+    proto, listener = protocol(version)
+    proto.data_received(corrupt + good[:-1])
+    assert listener.frames == []
+    assert proto.dispatcher.buffer == corrupt + good[:-1]
+    # After rejection, recover the embedded frame and retain a partial sibling.
+    sibling = packet(proto, {"4": "later"}, 8)
+    proto.data_received(good[-1:] + sibling[:23])
+    assert listener.frames == [{"1": "good"}]
+    assert proto.dispatcher.buffer == sibling[:23]
+    proto.data_received(sibling[23:])
+    assert listener.frames == [{"1": "good"}, {"4": "later"}]
+    assert proto.dispatcher.buffer == b""
+
+
+@pytest.mark.asyncio
 async def test_coalesced_bad_tag_then_valid_frame():
     proto, listener = protocol()
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
     proto.data_received(chosen_plaintext_packet(proto) + packet(proto))
+    assert waiter.done() and waiter.result().crc_good
+    assert listener.frames == listener.statuses == [{"1": "synthetic"}]
+    assert proto.dispatcher.buffer == b""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [3.1, 3.3, 3.4, 3.5])
+async def test_coalesced_invalid_integrity_then_valid_frame(version):
+    proto, listener = protocol(version)
+    waiter = asyncio.get_running_loop().create_future()
+    proto.dispatcher.listeners[7] = waiter
+    invalid = bytearray(packet(proto, {"1": "forged"}, 6))
+    invalid[-5] ^= 1
+    proto.data_received(bytes(invalid) + packet(proto))
     assert waiter.done() and waiter.result().crc_good
     assert listener.frames == listener.statuses == [{"1": "synthetic"}]
     assert proto.dispatcher.buffer == b""

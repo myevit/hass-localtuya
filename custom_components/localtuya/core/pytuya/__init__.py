@@ -378,7 +378,6 @@ class MessageDispatcher(ContextualLogger):
             hmac_key = self.local_key if self.version >= 3.4 else None
             no_retcode = False
             frame = self.buffer[: header.total_length]
-            self.buffer = self.buffer[header.total_length :]
             try:
                 msg = parser.unpack_message(
                     frame,
@@ -389,7 +388,14 @@ class MessageDispatcher(ContextualLogger):
                 )
             except parser.DecodeError:
                 self.debug("Discarding invalid message")
+                self.buffer = self.buffer[1:]
                 continue
+            if not msg.crc_good:
+                self.debug("Discarding message with invalid integrity")
+                self.buffer = self.buffer[1:]
+                continue
+            # An untrusted length can include a subsequent valid frame.
+            self.buffer = self.buffer[header.total_length :]
             self._dispatch(msg)
 
     def _dispatch(self, msg: TuyaMessage):
