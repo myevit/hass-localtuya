@@ -37,10 +37,23 @@
         }
     },
     "options": {
+        "error": {"unsupported_feeder_profile": "The native FT-11W profile requires the exact model, protocol, DP codes and quantity schema."},
+        "abort": {"unsupported_feeder_profile": "Unsupported native FT-11W configuration; nothing was changed."},
         "step": {
+            "configure_feeder": {
+                "title": "Enable native feeder profile",
+                "description": "Opt in an existing device without changing its connection or existing entity settings. The integration will reload; no feed or schedule is sent.",
+                "data": {
+                    "selected_device": "Configured device",
+                    "feeder_profile": "Native feeder profile (explicit opt-in)",
+                    "feeder_legacy_entry_id": "Disabled legacy entry to restore (optional)"
+                }
+            },
+            "configure_device": {"data": {"feeder_profile": "Native feeder profile (explicit opt-in)"}},
             "init": {
                 "title": "LocalTuya Configuration",
                 "description": "Please select the desired actionSSSS.",
+                "menu_options": {"configure_feeder": "Enable native feeder profile"},
                 "data": {
                     "add_device": "Add a new device",
                     "edit_device": "Edit a device",

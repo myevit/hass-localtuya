@@ -266,12 +266,20 @@ class MessageDispatcher(ContextualLogger):
     SESS_KEY_SEQNO = -102
     SUB_DEVICE_QUERY_SEQNO = -103
 
-    def __init__(self, dev_id, callback_status_update, protocol_version, local_key):
+    def __init__(
+        self,
+        dev_id,
+        callback_status_update,
+        protocol_version,
+        local_key,
+        callback_frame=None,
+    ):
         """Initialize a new MessageBuffer."""
         super().__init__()
         self.buffer = b""
         self.listeners: dict[str, asyncio.Future] = {}
         self.callback_status_update = callback_status_update
+        self.callback_frame = callback_frame
         self.version = protocol_version
         self.local_key = local_key
 
@@ -315,56 +323,90 @@ class MessageDispatcher(ContextualLogger):
     def add_data(self, data: bytes):
         """Add new data to the buffer and try to parse messages."""
         self.buffer += data
-        prefixes_bin = {prefix.bin for prefix in Affix.prefixes}
-        suffixes_bin = {suffix.bin for suffix in Affix.suffixes}
-        header_len = struct.calcsize(MessagesFormat.END_55AA)
         while self.buffer:
-
-            # Check if enough data for measage header
-            if len(self.buffer) < header_len:
+            positions = [self.buffer.find(prefix.bin) for prefix in Affix.prefixes]
+            positions = [index for index in positions if index >= 0]
+            if not positions:
+                # Retain only a possible split prefix, not arbitrary noise.
+                self.buffer = next(
+                    (
+                        self.buffer[-size:]
+                        for size in range(min(3, len(self.buffer)), 0, -1)
+                        if any(
+                            prefix.bin.startswith(self.buffer[-size:])
+                            for prefix in Affix.prefixes
+                        )
+                    ),
+                    b"",
+                )
                 break
-
-            if (prefix_index := self.buffer.find(Affix.prefix_55aa.bin)) == -1:
-                prefix_index = self.buffer.find(Affix.prefix_6699.bin)
-
-            if prefix_index == -1:
-                self.debug(f"Invalid prefix: {self.buffer!r}")
-                self.buffer = b""
-            elif self.buffer[:4] not in (prefixes_bin) and prefix_index > 0:
-                self.debug(f"prefix is not at the end: {self.buffer}")
-                self.buffer = self.buffer[prefix_index:]
-
-            if (suffix_index := self.buffer.find(Affix.suffix_55aa.bin)) == -1:
-                suffix_index = self.buffer.find(Affix.suffix_6699.bin)
-
-            # if not any (self.buffer.endswith(suffix) for suffix in suffixes)
-            if suffix_index == -1:
-                self.debug(f"Invalid suffix: {self.buffer!r}")
-                self.buffer = b""
-            if not any(self.buffer.endswith(suffix_bin) for suffix_bin in suffixes_bin):
-                self.debug(f"suffix is not at the end: {self.buffer!r}")
+            self.buffer = self.buffer[min(positions) :]
+            is_6699 = self.buffer.startswith(Affix.prefix_6699.bin)
+            header_fmt = (
+                MessagesFormat.HEADER_6699 if is_6699 else MessagesFormat.HEADER_55AA
+            )
+            if len(self.buffer) < struct.calcsize(header_fmt):
                 break
-                # self.buffer = self.buffer[: suffix_index + 4]
-
-            header = parser.parse_header(self.buffer, logger=self)
+            try:
+                header = parser.parse_header(self.buffer, logger=self)
+            except parser.DecodeError:
+                self.buffer = self.buffer[1:]
+                continue
+            end_fmt = (
+                MessagesFormat.END_6699
+                if is_6699
+                else (
+                    MessagesFormat.END_HMAC
+                    if self.version >= 3.4
+                    else MessagesFormat.END_55AA
+                )
+            )
+            # 6699 counts its nonce, but not the suffix, in the declared length.
+            minimum = struct.calcsize(end_fmt) + struct.calcsize(MessagesFormat.RETCODE)
+            if is_6699:
+                minimum += 12 - len(Affix.suffix_6699.bin)
+            if header.length < minimum:
+                self.buffer = self.buffer[1:]
+                continue
             if len(self.buffer) < header.total_length:
-                self.debug(f"Not enough data to parse: {self.buffer}")
-                break  # not enough data.
+                break
+            suffix = Affix.suffix_6699 if is_6699 else Affix.suffix_55aa
+            if self.buffer[header.total_length - 4 : header.total_length] != suffix.bin:
+                self.buffer = self.buffer[1:]
+                continue
 
             hmac_key = self.local_key if self.version >= 3.4 else None
             no_retcode = False
-            msg = parser.unpack_message(
-                self.buffer,
-                header=header,
-                hmac_key=hmac_key,
-                no_retcode=no_retcode,
-                logger=self,
-            )
+            frame = self.buffer[: header.total_length]
+            try:
+                msg = parser.unpack_message(
+                    frame,
+                    header=header,
+                    hmac_key=hmac_key,
+                    no_retcode=no_retcode,
+                    logger=self,
+                )
+            except parser.DecodeError:
+                self.debug("Discarding invalid message")
+                self.buffer = self.buffer[1:]
+                continue
+            if not msg.crc_good:
+                self.debug("Discarding message with invalid integrity")
+                self.buffer = self.buffer[1:]
+                continue
+            # An untrusted length can include a subsequent valid frame.
             self.buffer = self.buffer[header.total_length :]
             self._dispatch(msg)
 
     def _dispatch(self, msg: TuyaMessage):
         """Dispatch a message to someone that is listening."""
+
+        if not msg.crc_good:
+            self.debug("Discarding message with invalid integrity")
+            return
+
+        if self.callback_frame:
+            self.callback_frame(msg)
 
         self.debug("Dispatching message CMD %r %s", msg.cmd, msg)
 
@@ -493,6 +535,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.dispatched_dps = {}  # Store payload so we can trigger an event in HA.
         self._last_command_sent = 1  # The time last command was sent
         self._write_lock = asyncio.Lock()  # To serialize writes
+        self.connection_generation = object()
         self.enable_debug(enable_debug)
 
     def set_version(self, protocol_version):
@@ -555,6 +598,26 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             )
 
     def _setup_dispatcher(self) -> MessageDispatcher:
+        def _frame_received(msg):
+            # A query response or a STATUS consumed by a waiter is still a frame.
+            # Never decode extra frames for ordinary legacy listeners.
+            listener = self.listener and self.listener()
+            if (
+                msg.cmd not in (CMDType.STATUS, CMDType.DP_QUERY, CMDType.DP_QUERY_NEW)
+                or not listener
+                or not getattr(listener, "wants_exact_status", False)
+            ):
+                return
+            decoded = self._decode_payload(msg.payload)
+            if (
+                isinstance(decoded, dict)
+                and isinstance(decoded.get("dps"), dict)
+                and not decoded.get("cid")
+            ):
+                listener.status_received(
+                    dict(decoded["dps"]), self.connection_generation
+                )
+
         def _status_update(msg, ack=False):
             if msg.seqno > 0:
                 if msg.seqno >= self.seqno:
@@ -597,10 +660,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
                 listener.status_updated(status)
 
-        return MessageDispatcher(self.id, _status_update, self.version, self.local_key)
+        return MessageDispatcher(
+            self.id, _status_update, self.version, self.local_key, _frame_received
+        )
 
     def connection_made(self, transport):
         """Did connect to the device."""
+        self.connection_generation = object()
         self.transport = transport
 
     def keep_alive(self, is_gateway: bool = False):
@@ -865,6 +931,33 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             enc_payload = self._encode_message(payload)
             await self.transport_write(enc_payload)
         return True
+
+    @property
+    def can_write_once(self):
+        """Only an existing negotiated direct 3.5 session can publish once."""
+        return (
+            self.is_connected
+            and self.version == 3.5
+            and self.local_key != self.real_local_key
+            and not self._write_lock.locked()
+        )
+
+    async def set_dps_once(self, dps, on_attempt=None):
+        """Publish exactly once, with no negotiation, pacing queue or retry.
+
+        ConnectionError means no transport write was attempted. After on_attempt,
+        any exception (including cancellation) must be treated as uncertain.
+        Returning proves only publication, never receipt or physical completion.
+        """
+        if not self.can_write_once:
+            raise ConnectionError("No ready negotiated one-shot session")
+        # There is no await between readiness, encoding and the single write.
+        payload = self._generate_payload(CMDType.CONTROL, dps)
+        encoded = self._encode_message(payload)
+        if on_attempt:
+            on_attempt()
+        self._last_command_sent = time.monotonic()
+        self.transport.write(encoded)
 
     async def set_dp(self, value, dp_index, cid=None):
         """

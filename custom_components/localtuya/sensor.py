@@ -169,4 +169,130 @@ class LocalTuyaSensor(LocalTuyaEntity, SensorEntity):
             )
 
 
-async_setup_entry = partial(async_setup_entry, DOMAIN, LocalTuyaSensor, flow_schema)
+class FeederMealPlanSensor(LocalTuyaEntity, SensorEntity):
+    """Presentation only: the owning TuyaDevice holds all feeder state."""
+
+    def __init__(self, device, config_entry, sensorid, **kwargs):
+        super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
+        self.capability = device.feeder
+        self._attr_icon = "mdi:calendar-clock"
+
+    @property
+    def available(self):
+        """A last-reported snapshot remains readable when LAN is disconnected."""
+        return True
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.capability.entity_id = self.entity_id
+        self.async_on_remove(self.capability.subscribe(self.async_write_ha_state))
+
+    async def async_will_remove_from_hass(self):
+        self.capability.entity_id = None
+        await super().async_will_remove_from_hass()
+
+    def status_updated(self):
+        """Merged cache is deliberately not an observation source."""
+
+    def status_restored(self, stored_state):
+        """Native Store restores provenance; entity state is not a receipt."""
+
+    async def restore_state_when_connected(self):
+        """Never replay an actuator value."""
+
+    @property
+    def native_value(self):
+        meals = self.capability.meals
+        return len(meals) if meals is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        from copy import deepcopy
+
+        c = self.capability
+        safe = (
+            c.ready
+            and not c.lock.locked()
+            and not c.feed_uncertain
+            and not c.uncertain
+            and not c.error
+        )
+        return {
+            "native_feeder_profile": "ft11w",
+            "meals": deepcopy(c.meals) if c.meals is not None else [],
+            "revision": c.revision,
+            "last_received_at": c.last_received_at,
+            "snapshot_source": c.snapshot_source,
+            "schedule_valid": c.meals is not None,
+            "observation_kind": "last locally reported snapshot; not an active schedule query",
+            "requires_restored_snapshot_acknowledgement": c.snapshot_source
+            == "restored",
+            "supports_restored_schedule_write": bool(
+                safe and c.meals is not None and c.snapshot_source == "restored"
+            ),
+            "supports_schedule_write": bool(
+                safe and c.meals is not None and c.snapshot_source == "received"
+            ),
+            "pending": c.lock.locked(),
+            "error": c.error,
+            "manual_feed_capability": True,
+            "supports_manual_feed": bool(c.feed_ready and safe),
+            "feeding_pending": c.lock.locked() and c._kind == "feed",
+            "feeding_state": c.feeding_state,
+            "feeding_error": c.feeding_error,
+            "feeding_requested_at": c.requested_at,
+            "feeding_observed_at": c.observed_at,
+            "feeding_reported_at": c.reported_at,
+            "feeding_portions": c.portions,
+            "last_feed_at": c.last_feed_at,
+            "last_feed_source": "local_dp4_feeding_edge" if c.last_feed_at else None,
+            "supported_days_mode": "every_day",
+            "max_meals": 10,
+            "max_portions": 60,
+            "warning": "Ordinary LAN GET may omit DP1. Unreported external edits are not protected by revision. Feeder-local clock/timezone is not managed.",
+        }
+
+
+class FeederLastFeedSensor(SensorEntity):
+    """Genuine observed feeding start, not dispensing completion."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Last feed"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, plan):
+        self.plan = plan
+        self.capability = plan.capability
+        self._attr_unique_id = f"local_{plan._device.id}_last_feed"
+
+    @property
+    def device_info(self):
+        return self.plan.device_info
+
+    @property
+    def native_value(self):
+        from homeassistant.util import dt as dt_util
+
+        return (
+            dt_util.parse_datetime(self.capability.last_feed_at)
+            if self.capability.last_feed_at
+            else None
+        )
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(self.capability.subscribe(self.async_write_ha_state))
+
+
+def make_sensor(device, config_entry, sensorid, **kwargs):
+    """Exact native profile DP1 bypasses generic electrical RAW decoding."""
+    if device.feeder and str(sensorid) == "1":
+        entity = FeederMealPlanSensor(device, config_entry, sensorid, **kwargs)
+        if add := kwargs.get("add_entites_callback"):
+            add([FeederLastFeedSensor(entity)])
+        return entity
+    return LocalTuyaSensor(device, config_entry, sensorid, **kwargs)
+
+
+async_setup_entry = partial(async_setup_entry, DOMAIN, make_sensor, flow_schema)

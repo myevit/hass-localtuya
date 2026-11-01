@@ -11,6 +11,7 @@
             "invalid_auth": "Failed to authenticate with device. Confirm the Device Id and Local Key are correct.",
             "unknown": "An unknown error occurred.\n{ex}.",
             "entity_already_configured": "This entity has already been configured.",
+            "unsupported_feeder_profile": "The native FT-11W profile requires the exact model, protocol, DP codes and quantity schema.",
             "address_in_use": "TCP port 6668 (used for discovery) is already in use. Check no other integration is using it.",
             "discovery_failed": "Something failed when discovering devices. See log for details. If problem persists, create a new issue (including debug logs).",
             "empty_dps": "Connection to device succeeded but no datapoints could be found. Please try set-up again. If problem persists, create a new issue (including debug logs)."
@@ -34,6 +35,7 @@
         "abort": {
             "already_configured": "This account has already been configured.",
             "device_success": "Device {dev_name} successfully {action}.",
+            "unsupported_feeder_profile": "Unsupported native FT-11W configuration; nothing was changed.",
             "no_entities": "Cannot remove all entities from a device.\nIf you want to delete a device: Browse to `Devices & services` menu, search for your device in `Devices` tab, click the 3 dots in the `Device info` frame, and press the `Delete` button."
         },
         "error": {
@@ -43,6 +45,7 @@
             "invalid_auth": "Failed to authenticate with device. Confirm the Device Id and Local Key are correct.",
             "unknown": "An unknown error occurred. \n{ex}.",
             "entity_already_configured": "This entity has already been configured.",
+            "unsupported_feeder_profile": "The native FT-11W profile requires the exact model, protocol, DP codes and quantity schema.",
             "address_in_use": "TCP port 6668 (used for discovery) is already in use. Check no other integration is using it.",
             "discovery_failed": "Something failed when discovering devices. See log for details. If problem persists, create a new issue (including debug logs).",
             "empty_dps": "Connection to device succeeded but no datapoints could be found. Please try set-up again. If problem persists, create a new issue (including debug logs)."
@@ -58,7 +61,8 @@
                 "menu_options": {
                     "add_device": "Add new device",
                     "edit_device": "Reconfigure existing device",
-                    "configure_cloud": "Manage Cloud API account"
+                    "configure_cloud": "Manage Cloud API account",
+                    "configure_feeder": "Enable native feeder profile"
                 }
             },
             "add_device": {
@@ -74,6 +78,15 @@
                 "description": "Select the device you wish to re-configure.",
                 "data": {
                     "selected_device": "Configured devices"
+                }
+            },
+            "configure_feeder": {
+                "title": "Enable native feeder profile",
+                "description": "Opt in an existing device without changing its connection or existing entity settings. The integration will reload; no feed or schedule is sent.",
+                "data": {
+                    "selected_device": "Configured device",
+                    "feeder_profile": "Native feeder profile (explicit opt-in)",
+                    "feeder_legacy_entry_id": "Disabled legacy entry to restore (optional)"
                 }
             },
             "configure_cloud": {
@@ -101,6 +114,7 @@
                     "device_id": "Device ID",
                     "local_key": "Local Key",
                     "node_id": "(Optional) Sub-devices Node Id",
+                    "feeder_profile": "Native feeder profile (none or verified ft11w only)",
                     "protocol_version": "Protocol Version",
                     "enable_debug": "Enable debug (must be manually enabled in `configuration.yaml` too)",
                     "scan_interval": "(Optional) Scan interval in seconds, if not scanning automatically",

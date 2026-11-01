@@ -112,6 +112,67 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
         self.set_logger(_LOGGER, dev.id, dev.enable_debug, self.friendly_name)
 
+        from .core.ha_entities.pet_feeders import supported
+        from .feeder import FeederCapability
+
+        self.feeder = (
+            FeederCapability(self)
+            if supported(device_config) and not fake_gateway
+            else None
+        )
+
+    @property
+    def generation(self):
+        """Identity of the existing protocol connection, never restored."""
+        return self._interface.connection_generation if self._interface else None
+
+    @property
+    def feeder_ready(self):
+        return bool(
+            self.feeder
+            and not self.is_closing
+            and not self.is_connecting
+            and self._interface
+            and self._interface.can_write_once
+            and not self._pending_status
+        )
+
+    def status_received(self, dps, generation):
+        """Native exact-frame consumer; legacy merged status remains unchanged."""
+        if self.feeder:
+            self.feeder.received(dps, generation)
+
+    @property
+    def wants_exact_status(self):
+        return self.feeder is not None
+
+    async def send_feeder_once(self, dps, generation, on_attempt):
+        """Only the device-owned reservation can use the one-shot API."""
+        if (
+            not self.feeder_ready
+            or not self.feeder.lock.locked()
+            or generation is not self.generation
+            or self.feeder._operation is not asyncio.current_task()
+            or set(dps) not in ({"1"}, {"3"})
+        ):
+            raise ConnectionError("Feeder connection or reservation changed")
+        await self._interface.set_dps_once(dps, on_attempt)
+
+    def _guard_feeder_raw(self, dps):
+        if self._device_config.as_dict().get("feeder_profile") not in (
+            None,
+            "",
+            "none",
+        ) and (
+            (self.feeder and self.feeder.lock.locked())
+            or any(str(dp) in ("1", "2", "3") for dp in dps)
+        ):
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Native feeder owns DP1/2/3; use typed localtuya feeder actions"
+            )
+
     @property
     def friendly_name(self):
         """Name string for log prefixes."""
@@ -331,6 +392,8 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                 self._task_reconnect = asyncio.create_task(self._async_reconnect())
 
         self._task_connect = None
+        if self.feeder:
+            self.feeder.publish()
 
     async def abort_connect(self):
         """Abort the connect process to the interface[device]"""
@@ -358,28 +421,37 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
         self.is_closing = True
 
-        tasks = [self._task_shutdown_entities, self._task_reconnect, self._task_connect]
-        pending_tasks = [task for task in tasks if task and task.cancel()]
-        await asyncio.gather(*pending_tasks, return_exceptions=True)
+        try:
+            if self.feeder:
+                await self.feeder.stop()
+        finally:
+            # Persistence failure must not leave a live connection behind.
+            tasks = [
+                self._task_shutdown_entities,
+                self._task_reconnect,
+                self._task_connect,
+            ]
+            pending_tasks = [task for task in tasks if task and task.cancel()]
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
 
-        # Close subdevices first, to prevent them try to reconnect
-        # after gateway disconnected.
-        for subdevice in self.sub_devices.values():
-            await subdevice.close()
+            # Close subdevices first, to prevent them try to reconnect
+            # after gateway disconnected.
+            for subdevice in self.sub_devices.values():
+                await subdevice.close()
 
-        if self._unsub_new_entity:
-            self._unsub_new_entity()
-            self._unsub_new_entity = None
+            if self._unsub_new_entity:
+                self._unsub_new_entity()
+                self._unsub_new_entity = None
 
-        if self._unsub_refresh:
-            self._unsub_refresh()
-            self._unsub_refresh = None
+            if self._unsub_refresh:
+                self._unsub_refresh()
+                self._unsub_refresh = None
 
-        await self.abort_connect()
+            await self.abort_connect()
 
-        if self.gateway:
-            self.gateway.filter_subdevices()
-        self.debug("Closed connection", force=True)
+            if self.gateway:
+                self.gateway.filter_subdevices()
+            self.debug("Closed connection", force=True)
 
     async def set_status(self):
         """Send self._pending_status payload to device."""
@@ -399,6 +471,7 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
+        self._guard_feeder_raw([dp_index])
         if self._interface is not None:
             self._pending_status.update({dp_index: state})
             await asyncio.sleep(0.001)
@@ -409,6 +482,7 @@ class TuyaDevice(TuyaListener, ContextualLogger):
 
     async def set_dps(self, states):
         """Change value of a DPs of the Tuya device."""
+        self._guard_feeder_raw(states)
         if self._interface is not None:
             self._pending_status.update(states)
             await asyncio.sleep(0.001)
@@ -611,6 +685,8 @@ class TuyaDevice(TuyaListener, ContextualLogger):
     @callback
     def disconnected(self, exc=""):
         """Device disconnected."""
+        if self.feeder:
+            self.feeder.disconnected()
         if not self._interface:
             return
         self._interface = None

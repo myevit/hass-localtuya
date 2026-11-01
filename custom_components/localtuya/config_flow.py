@@ -58,6 +58,7 @@ from .const import (
     CONF_LOCAL_KEY,
     CONF_MANUAL_DPS,
     CONF_MODEL,
+    CONF_FEEDER_PROFILE,
     CONF_NODE_ID,
     CONF_NO_CLOUD,
     CONF_PRODUCT_KEY,
@@ -155,6 +156,7 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Optional(CONF_RESET_DPIDS): str,
         vol.Optional(CONF_DEVICE_SLEEP_TIME): int,
         vol.Optional(CONF_NODE_ID, default=None): vol.Any(None, cv.string),
+        vol.Optional(CONF_FEEDER_PROFILE, default="none"): vol.In(["none", "ft11w"]),
     }
 )
 
@@ -279,14 +281,73 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
         configure_menu = CONFIGURE_MENU.copy()
+        if self.config_entry.data[CONF_DEVICES]:
+            configure_menu.append("configure_feeder")
         # Remove Reconfigure existing device option if there is no existed devices.
         if not self.config_entry.data[CONF_DEVICES]:
             configure_menu.pop(configure_menu.index(CONF_EDIT_DEVICE))
 
-        if not self.config_entry.data.get(CONF_NO_CLOUD, True):
+        if not self.config_entry.disabled_by and not self.config_entry.data.get(
+            CONF_NO_CLOUD, True
+        ):
             self.hass.async_create_task(self.cloud_data.async_get_devices_list())
 
         return self.async_show_menu(step_id="init", menu_options=configure_menu)
+
+    async def async_step_configure_feeder(self, user_input=None):
+        """Opt an existing device in without rebuilding its entities or connecting."""
+        from .core.ha_entities.pet_feeders import supported, with_native_entities
+
+        devices = self.config_entry.data[CONF_DEVICES]
+        if user_input is not None:
+            dev_id = user_input[SELECTED_DEVICE]
+            if dev_id not in devices:
+                return self.async_abort(reason="unsupported_feeder_profile")
+            config = copy.deepcopy(devices[dev_id])
+            config[CONF_FEEDER_PROFILE] = user_input[CONF_FEEDER_PROFILE]
+            if legacy_id := user_input.get("feeder_legacy_entry_id"):
+                legacy = self.hass.config_entries.async_get_entry(legacy_id)
+                if (
+                    legacy is None
+                    or legacy.domain != "tuya_feeder"
+                    or not legacy.disabled_by
+                    or legacy.data.get(CONF_DEVICE_ID) != dev_id
+                    or legacy.data.get("localtuya_entry_id") != self._entry_id
+                ):
+                    return self.async_abort(reason="unsupported_feeder_profile")
+                config["feeder_legacy_entry_id"] = legacy_id
+            if not supported(config):
+                return self.async_abort(reason="unsupported_feeder_profile")
+            config[CONF_ENTITIES] = with_native_entities(config)
+            new_data = copy.deepcopy(dict(self.config_entry.data))
+            new_data[CONF_DEVICES][dev_id] = config
+            return self._update_entry(new_data)
+
+        return self.async_show_form(
+            step_id="configure_feeder",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(SELECTED_DEVICE): vol.In(
+                        {
+                            dev_id: dev.get(CONF_FRIENDLY_NAME, dev_id)
+                            for dev_id, dev in devices.items()
+                        }
+                    ),
+                    vol.Required(CONF_FEEDER_PROFILE): vol.In(["ft11w"]),
+                    vol.Optional("feeder_legacy_entry_id"): vol.In(
+                        {
+                            entry.entry_id: entry.title
+                            for entry in self.hass.config_entries.async_entries(
+                                "tuya_feeder"
+                            )
+                            if entry.disabled_by
+                            and entry.data.get("localtuya_entry_id") == self._entry_id
+                            and entry.data.get(CONF_DEVICE_ID) in devices
+                        }
+                    ),
+                }
+            ),
+        )
 
     async def async_step_configure_cloud(self, user_input=None):
         """Handle the initial step."""
@@ -483,7 +544,13 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                         return self.async_create_entry(title="", data={})
 
                     # We will restore device details if it's already existed!
-                    for res_conf in [CONF_GATEWAY_ID, CONF_MODEL, CONF_PRODUCT_KEY]:
+                    for res_conf in [
+                        CONF_GATEWAY_ID,
+                        CONF_MODEL,
+                        CONF_PRODUCT_KEY,
+                        CONF_FEEDER_PROFILE,
+                        "feeder_legacy_entry_id",
+                    ]:
                         if dev_config.get(res_conf):
                             self.device_data[res_conf] = dev_config.get(res_conf)
 
@@ -636,6 +703,7 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
             category = self.cloud_data.device_list[dev_id].get(TUYA_CATEGORY, "")
 
         localtuya_data = {
+            **self.device_data,
             DEVICE_CLOUD_DATA: device_data,
             CONF_DPS_STRINGS: self.dps_strings,
             CONF_FRIENDLY_NAME: self.device_data.get(CONF_FRIENDLY_NAME),
@@ -678,6 +746,20 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                 }
 
                 dev_id = self.device_data.get(CONF_DEVICE_ID)
+
+                if config.get(CONF_FEEDER_PROFILE) == "ft11w":
+                    from .core.ha_entities.pet_feeders import (
+                        supported,
+                        with_native_entities,
+                    )
+
+                    if not supported(config):
+                        return self.async_show_form(
+                            step_id="pick_entity_type",
+                            data_schema=PICK_ENTITY_SCHEMA,
+                            errors={"base": "unsupported_feeder_profile"},
+                        )
+                    config[CONF_ENTITIES] = with_native_entities(config)
 
                 new_data = self.config_entry.data.copy()
                 new_data[CONF_DEVICES].update({dev_id: config})
@@ -767,6 +849,21 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                 self.device_data[CONF_ENTITIES].append(entity)
                 if len(self.entities) == len(self.device_data[CONF_ENTITIES]):
                     # finished editing device. Let's store the new config entry....
+                    if self.device_data.get(CONF_FEEDER_PROFILE) not in (
+                        None,
+                        "",
+                        "none",
+                    ):
+                        from .core.ha_entities.pet_feeders import (
+                            supported,
+                            with_native_entities,
+                        )
+
+                        if not supported(self.device_data):
+                            return self.async_abort(reason="unsupported_feeder_profile")
+                        self.device_data[CONF_ENTITIES] = with_native_entities(
+                            self.device_data
+                        )
                     dev_id = self.device_data[CONF_DEVICE_ID]
                     new_data = self.config_entry.data.copy()
                     entry_id = self.config_entry.entry_id
@@ -781,6 +878,10 @@ class LocalTuyaOptionsFlowHandler(OptionsFlow):
                         for ent in er.async_entries_for_config_entry(ent_reg, entry_id)
                         if dev_id in ent.unique_id
                         and ent.original_name not in entitesNames
+                        and not (
+                            self.device_data.get(CONF_FEEDER_PROFILE) == "ft11w"
+                            and ent.unique_id == f"local_{dev_id}_last_feed"
+                        )
                     }
                     for entity_id in reg_entities.values():
                         ent_reg.async_remove(entity_id)

@@ -95,3 +95,167 @@ remote_add_code:
       required: false
       selector:
         text:
+
+set_feeder_schedule:
+  name: "Set feeder schedule"
+  description: "Replace the complete native FT-11W schedule and wait for a genuine DP1 receipt. No retries."
+  fields:
+    entity_id:
+      name: "Native meal plan"
+      required: true
+      selector:
+        entity:
+          filter:
+            integration: "localtuya"
+            domain: "sensor"
+          multiple: false
+    expected_revision:
+      name: "Expected revision"
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: "box"
+    acknowledge_restored_snapshot:
+      name: "Acknowledge restored snapshot"
+      description: "Required for a restored plan. It is not a current device query."
+      default: false
+      selector:
+        boolean: {}
+    meals:
+      name: "Complete schedule"
+      required: true
+      selector:
+        object: {}
+add_feeder_meal:
+  name: "Add feeder meal"
+  description: "Replace the complete native FT-11W schedule and wait for a genuine DP1 receipt. No retries."
+  fields:
+    entity_id:
+      name: "Native meal plan"
+      required: true
+      selector:
+        entity:
+          filter:
+            integration: "localtuya"
+            domain: "sensor"
+          multiple: false
+    expected_revision:
+      name: "Expected revision"
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: "box"
+    acknowledge_restored_snapshot:
+      name: "Acknowledge restored snapshot"
+      description: "Required for a restored plan. It is not a current device query."
+      default: false
+      selector:
+        boolean: {}
+    meal:
+      name: "Complete meal record"
+      required: true
+      selector:
+        object: {}
+update_feeder_meal:
+  name: "Update feeder meal"
+  description: "Replace the complete native FT-11W schedule and wait for a genuine DP1 receipt. No retries."
+  fields:
+    entity_id:
+      name: "Native meal plan"
+      required: true
+      selector:
+        entity:
+          filter:
+            integration: "localtuya"
+            domain: "sensor"
+          multiple: false
+    expected_revision:
+      name: "Expected revision"
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: "box"
+    acknowledge_restored_snapshot:
+      name: "Acknowledge restored snapshot"
+      description: "Required for a restored plan. It is not a current device query."
+      default: false
+      selector:
+        boolean: {}
+    meal_index:
+      name: "Zero-based meal index"
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9
+          mode: "box"
+    meal:
+      name: "Complete meal record"
+      required: true
+      selector:
+        object: {}
+delete_feeder_meal:
+  name: "Delete feeder meal"
+  description: "Replace the complete native FT-11W schedule and wait for a genuine DP1 receipt. No retries."
+  fields:
+    entity_id:
+      name: "Native meal plan"
+      required: true
+      selector:
+        entity:
+          filter:
+            integration: "localtuya"
+            domain: "sensor"
+          multiple: false
+    expected_revision:
+      name: "Expected revision"
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: "box"
+    acknowledge_restored_snapshot:
+      name: "Acknowledge restored snapshot"
+      description: "Required for a restored plan. It is not a current device query."
+      default: false
+      selector:
+        boolean: {}
+    meal_index:
+      name: "Zero-based meal index"
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9
+          mode: "box"
+feed:
+  name: "Feed"
+  description: "Publish DP3 once; no retries or DP2. Unknown outcomes must not be retried."
+  fields:
+    entity_id:
+      name: "Native meal plan"
+      required: true
+      selector:
+        entity:
+          filter:
+            integration: "localtuya"
+            domain: "sensor"
+          multiple: false
+    portions:
+      name: "Confirmed portions"
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          mode: "box"
+    confirmed:
+      name: "Quantity explicitly confirmed"
+      description: "Confirm the selected quantity before dispensing."
+      required: true
+      selector:
+        boolean: {}

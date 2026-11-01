@@ -148,8 +148,8 @@ def unpack_message(
                 tag=crc,
             )
             crc_good = True
-        except:
-            crc_good = False
+        except Exception as exc:
+            raise DecodeError("Message authentication failed") from exc
 
         retcode_len = struct.calcsize(MessagesFormat.RETCODE)
         if no_retcode is False:
