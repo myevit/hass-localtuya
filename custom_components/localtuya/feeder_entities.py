@@ -363,9 +363,17 @@ class FeederReadiness(FeederEntity, SensorEntity):
 
     _attr_device_class = "enum"
     _attr_options = [
-        "ready", "unavailable", "busy", "unknown_outcome", "schedule_blocked",
-        "waiting_for_idle", "not_idle", "waiting_for_fault", "fault",
-        "waiting_for_power", "power_restricted",
+        "ready",
+        "unavailable",
+        "busy",
+        "unknown_outcome",
+        "schedule_blocked",
+        "waiting_for_idle",
+        "not_idle",
+        "waiting_for_fault",
+        "fault",
+        "waiting_for_power",
+        "power_restricted",
     ]
 
     def __init__(self, device):
@@ -424,7 +432,10 @@ def setup_native_platform(domain, hass, entry, add_entities):
             entity_id = registry.async_get_entity_id(
                 old_domain, DOMAIN, f"local_{device.id}_{key}"
             )
-            if entity_id and registry.async_get(entity_id).config_entry_id == entry.entry_id:
+            if (
+                entity_id
+                and registry.async_get(entity_id).config_entry_id == entry.entry_id
+            ):
                 registry.async_remove(entity_id)
         add_entities([factory(device) for factory in common])
         if slot_factory is not None:

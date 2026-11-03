@@ -267,9 +267,11 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
     def native_raw_control(self):
         """Raw actuators retained for identity, superseded by native typed controls."""
         return (
-            self._device_config.as_dict().get("feeder_profile") not in (None, "", "none")
+            self._device_config.as_dict().get("feeder_profile")
+            not in (None, "", "none")
             and str(self._dp_id) in ("1", "2", "3")
-            and self._config.get(CONF_PLATFORM) in ("number", "select", "switch", "button")
+            and self._config.get(CONF_PLATFORM)
+            in ("number", "select", "switch", "button")
         )
 
     @property

@@ -47,6 +47,13 @@ transport and matching report confirmation. Merely displaying controls, startup,
 reconnect, local quantity restoration and read-only updates issue no DP1/2/3 write.
 Existing raw DP1/2/3 write bypasses remain blocked on selected profiles.
 
+A restored plan needs the one-use acknowledgement above before its next edit;
+that acknowledgement never bypasses corrupt storage. An invalid stored snapshot
+(including an error value other than null or text) blocks mutations and feeding.
+Preserve the stored evidence and resolve the storage fault through a separately
+reviewed recovery procedure; do not delete storage or acknowledge it to force a
+command through.
+
 ## Positional identity and native form limitations
 
 Firmware records have no persistent meal identifiers. **Slot N means protocol
