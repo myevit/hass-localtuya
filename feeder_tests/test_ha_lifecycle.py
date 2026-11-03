@@ -61,6 +61,19 @@ async def test_real_ha_setup_unload_reload_retains_registry_identity(
         "local_synthetic-device_1",
         "local_synthetic-device_3",
         "local_synthetic-device_last_feed",
+        *{
+            f"local_synthetic-device_{key}"
+            for key in (
+                "manual_portions",
+                "arm_feed",
+                "feed",
+                "add_meal",
+                "acknowledge_restored",
+                "delete_selection",
+                "feeder_status",
+                "feeder_error",
+            )
+        },
     }
     plan = next(r for r in registered if r.unique_id.endswith("_1"))
     state = hass.states.get(plan.entity_id)

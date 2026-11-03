@@ -110,6 +110,11 @@ async def async_setup_entry(
         if async_setup_services:
             await async_setup_services(hass, entities)
 
+    if any(device.feeder for device in hass_entry_data.devices.values()):
+        from .feeder_entities import setup_native_platform
+
+        setup_native_platform(domain, hass, config_entry, async_add_entities)
+
 
 def get_dps_for_platform(flow_schema):
     """Return config keys for all platform keys that depends on a datapoint."""

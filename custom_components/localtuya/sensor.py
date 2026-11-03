@@ -172,6 +172,11 @@ class LocalTuyaSensor(LocalTuyaEntity, SensorEntity):
 class FeederMealPlanSensor(LocalTuyaEntity, SensorEntity):
     """Presentation only: the owning TuyaDevice holds all feeder state."""
 
+    @property
+    def entity_category(self):
+        """This is an ordinary user-facing schedule count, not a diagnostic."""
+        return None
+
     def __init__(self, device, config_entry, sensorid, **kwargs):
         super().__init__(device, config_entry, sensorid, _LOGGER, **kwargs)
         self.capability = device.feeder

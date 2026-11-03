@@ -2,7 +2,7 @@ name: Native feeder offline qualification
 on:
   pull_request:
   push:
-    branches: [feat/ft11w-feeder]
+    branches: [feat/ft11w-feeder, feat/native-feeder-controls]
   workflow_dispatch:
 permissions:
   contents: read

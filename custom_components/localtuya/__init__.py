@@ -41,6 +41,7 @@ from .const import (
     DATA_DISCOVERY,
     DOMAIN,
     PLATFORMS,
+    RUNTIME_PLATFORMS,
 )
 
 from .discovery import TuyaDiscovery
@@ -414,7 +415,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             await dev.feeder.start()
 
     await async_remove_orphan_entities(hass, entry)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS.values())
+    platforms = (
+        RUNTIME_PLATFORMS
+        if any(dev.feeder for dev in hass_localtuya.devices.values())
+        else PLATFORMS.values()
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, platforms)
 
     # Note: entry.async_on_unload items are called in LIFO order!
 
@@ -441,7 +447,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unloading the Tuya platforms."""
     # Unload the platforms.
-    await hass.config_entries.async_unload_platforms(entry, PLATFORMS.values())
+    devices = hass.data[DOMAIN][entry.entry_id].devices
+    platforms = (
+        RUNTIME_PLATFORMS
+        if any(dev.feeder for dev in devices.values())
+        else PLATFORMS.values()
+    )
+    await hass.config_entries.async_unload_platforms(entry, platforms)
     hass.data[DOMAIN].pop(entry.entry_id)
 
     _LOGGER.info("Unload completed")

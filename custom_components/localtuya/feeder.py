@@ -169,6 +169,11 @@ class FeederCapability:
         self.error = None
         self.feed_uncertain = False
         self.last_feed_at = None
+        self.manual_portions = 1
+        self.native_delete_slot = None
+        self.native_arm_seconds = 30
+        self._native_arms = {}
+        self._disconnected = False
         self.feeding_state = "idle"
         self.feeding_error = None
         self.portions = None
@@ -308,8 +313,104 @@ class FeederCapability:
         return lambda: self._listeners.discard(listener)
 
     def publish(self):
+        for kind in list(self._native_arms):
+            if not self.native_armed(kind):
+                self.clear_native_arm(kind)
         for listener in tuple(self._listeners):
             listener()
+
+    def _native_token(self, kind):
+        """Exact native form baseline and selection, never persisted."""
+        parameter = (
+            self.manual_portions
+            if kind == "feed"
+            else (self.native_delete_slot if kind == "delete" else None)
+        )
+        return (
+            self.device.generation,
+            self.revision,
+            self.raw,
+            self.snapshot_source,
+            self.uncertain,
+            parameter,
+        )
+
+    def clear_native_arm(self, kind):
+        """Discard one short-lived native confirmation."""
+        if arm := self._native_arms.pop(kind, None):
+            arm[2].cancel()
+        if kind == "delete":
+            self.native_delete_slot = None
+
+    def native_armed(self, kind, slot=None):
+        """Never authorize a different quantity, slot, revision or connection."""
+        arm = self._native_arms.get(kind)
+        return bool(
+            arm
+            and self.ready
+            and not self.lock.locked()
+            and not self.uncertain
+            and not self.feed_uncertain
+            and not self.error
+            and arm[0] == self._native_token(kind)
+            and self.hass.loop.time() < arm[1]
+            and (kind != "delete" or slot is None or slot == self.native_delete_slot)
+        )
+
+    def arm_native(self, kind, slot=None):
+        """Bind a native action to the visible baseline for thirty seconds."""
+        if kind not in ("feed", "delete", "restored"):
+            raise ServiceValidationError("Unsupported native action")
+        self.clear_native_arm(kind)
+        if (
+            not self.ready
+            or self.lock.locked()
+            or self.meals is None
+            or self.error
+            or self.uncertain
+            or self.feed_uncertain
+            or (kind == "feed" and not self.feed_ready)
+            or (kind == "restored" and self.snapshot_source != "restored")
+            or (
+                kind == "delete"
+                and (type(slot) is not int or not 0 <= slot < len(self.meals))
+            )
+        ):
+            raise ServiceValidationError("No safe baseline for this confirmation")
+        if kind == "delete":
+            self.native_delete_slot = slot
+
+        def expire():
+            self.clear_native_arm(kind)
+            self.publish()
+
+        self._native_arms[kind] = (
+            self._native_token(kind),
+            self.hass.loop.time() + self.native_arm_seconds,
+            self.hass.loop.call_later(self.native_arm_seconds, expire),
+        )
+        self.publish()
+
+    def consume_native_arm(self, kind, slot=None):
+        """Consume before awaiting; failure must require a new confirmation."""
+        valid = self.native_armed(kind, slot)
+        self.clear_native_arm(kind)
+        self.publish()
+        if not valid:
+            raise ServiceValidationError(
+                "Arm this exact action again before confirming"
+            )
+
+    def set_manual_portions(self, value):
+        """Local integer selection; never a DP3 command."""
+        if (
+            type(value) not in (int, float)
+            or not 1 <= value <= 60
+            or int(value) != value
+        ):
+            raise ServiceValidationError("Select whole portions from 1 to 60")
+        self.manual_portions = int(value)
+        self.publish()
 
     def _persist_report(self):
         task = self.hass.async_create_task(self._save_report(), "localtuya-feeder-save")
@@ -333,6 +434,7 @@ class FeederCapability:
         ):
             return
         now = dt_util.utcnow().isoformat()
+        self._disconnected = False
         self._receipt_sequence += 1
         if generation is not self._activity_generation:
             self._activity_generation = generation
@@ -402,6 +504,9 @@ class FeederCapability:
         self.publish()
 
     def disconnected(self):
+        self._disconnected = True
+        for kind in list(self._native_arms):
+            self.clear_native_arm(kind)
         self._activity_generation = self._activity = None
         self._telemetry = {}
         if self._waiter and not self._waiter.done():
@@ -417,6 +522,7 @@ class FeederCapability:
         )
         return bool(
             not self.closed
+            and not self._disconnected
             and not self._storage_blocked
             and self.device.feeder_ready
             and not legacy_active
@@ -516,7 +622,7 @@ class FeederCapability:
         self.uncertain = True
         return await self._execute("schedule", {"1": target}, revision)
 
-    async def feed(self, portions, confirmed=False):
+    async def feed(self, portions, confirmed=False, *, expected_revision=None):
         """Quantity is the immutable confirmed selection; DP3 alone actuates."""
         if (
             type(portions) is not int
@@ -525,6 +631,8 @@ class FeederCapability:
         ):
             raise ServiceValidationError("Confirm an integer quantity from 1 to 60")
         self._validate_action()
+        if expected_revision is not None:
+            self._validate_revision(expected_revision)
         if not self.feed_ready or self.uncertain:
             raise ServiceValidationError("Feeder not ready or schedule result unknown")
         async with self.action():
@@ -533,7 +641,7 @@ class FeederCapability:
             self.portions = portions
             self.requested_at = self.observed_at = self.reported_at = None
             self.feeding_error = None
-            return await self._execute("feed", {"3": portions})
+            return await self._execute("feed", {"3": portions}, expected_revision)
 
     @asynccontextmanager
     async def action(self):
@@ -627,6 +735,8 @@ class FeederCapability:
 
     async def stop(self):
         self.closed = True
+        for kind in list(self._native_arms):
+            self.clear_native_arm(kind)
         if self._operation and self._operation is not asyncio.current_task():
             self._operation.cancel()
             await asyncio.gather(self._operation, return_exceptions=True)

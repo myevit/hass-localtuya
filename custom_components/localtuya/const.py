@@ -41,6 +41,9 @@ PLATFORMS = {
     "Water Heater": Platform.WATER_HEATER,
 }
 
+# Capability-only platforms must not enter the generic DP configuration chooser.
+RUNTIME_PLATFORMS = (*PLATFORMS.values(), Platform.TIME)
+
 ATTR_CURRENT = "current"
 ATTR_CURRENT_CONSUMPTION = "current_consumption"
 ATTR_VOLTAGE = "voltage"
