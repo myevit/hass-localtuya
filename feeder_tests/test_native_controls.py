@@ -42,7 +42,7 @@ async def test_native_time_preserves_all_other_bytes(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_local_selection_arms_exact_quantity_then_single_feed(tmp_path):
+async def test_local_selection_then_deliberate_single_feed(tmp_path):
     from custom_components.localtuya.feeder_entities import ManualPortions, FeedButton
 
     c, d = await state(tmp_path)
@@ -54,13 +54,8 @@ async def test_local_selection_arms_exact_quantity_then_single_feed(tmp_path):
     number, button = ManualPortions(d), FeedButton(d)
     await number.async_set_native_value(8.0)
     assert c.manual_portions == 8 and not d.writes
-    with pytest.raises(ServiceValidationError):
-        await button.async_press()
-    c.arm_native("feed")
     await number.async_set_native_value(9.0)
-    with pytest.raises(ServiceValidationError):
-        await button.async_press()
-    c.arm_native("feed")
+    assert not d.writes
     task = asyncio.create_task(button.async_press())
     while not d.writes and not task.done():
         await asyncio.sleep(0)
@@ -70,7 +65,7 @@ async def test_local_selection_arms_exact_quantity_then_single_feed(tmp_path):
     c.received({"4": "feeding"}, d.generation)
     c.received({"14": 9}, d.generation)
     await task
-    assert not c.native_armed("feed")
+    assert not c._native_arms
     await c.stop()
 
 
@@ -138,38 +133,27 @@ async def test_native_single_field_byte_preservation(tmp_path, field, value, off
 
 
 @pytest.mark.asyncio
-async def test_delete_target_selection_expiry_revision_and_compaction(tmp_path):
-    from custom_components.localtuya.feeder_entities import DeleteSelection, DeleteMeal
+async def test_delete_target_revision_and_compaction(tmp_path):
+    from custom_components.localtuya.feeder_entities import DeleteMeal
 
     c, d = await state(tmp_path)
     d.feeder = c
     baseline = [meal("08:17"), meal("12:39"), meal("21:18")]
     c.received({"1": encode(baseline)}, d.generation)
-    select = DeleteSelection(d)
-    await select.async_select_option("slot_2")
-    assert c.native_armed("delete", 1) and not c.native_armed("delete", 0)
-    with pytest.raises(ServiceValidationError):
-        await DeleteMeal(d, 0).async_press()
-    await select.async_select_option("slot_2")
+    stale = DeleteMeal(d, 1)
     c.received({"1": encode(baseline)}, d.generation)
-    assert not c.native_armed("delete")
-    select._capture()
-    c.native_arm_seconds = 0.001
-    await select.async_select_option("slot_2")
-    await asyncio.sleep(0.01)
-    assert c.native_delete_slot is None
-    c.native_arm_seconds = 30
-    await select.async_select_option("slot_2")
+    with pytest.raises(ServiceValidationError):
+        await stale.async_press()
+    assert not d.writes
     task = asyncio.create_task(DeleteMeal(d, 1).async_press())
     while not d.writes and not task.done():
         await asyncio.sleep(0)
     assert d.writes == [{"1": encode([baseline[0], baseline[2]])}]
     c.received(d.writes[0], d.generation)
     await task
-    assert c.meals[1] == baseline[2] and not c.native_armed("delete")
+    assert c.meals[1] == baseline[2] and not c._native_arms
     assert not d.writes[0].get("3")
     c.received({"1": encode([baseline[0]])}, d.generation)
-    c.arm_native("delete", 0)
     with pytest.raises(ServiceValidationError):
         await DeleteMeal(d, 0).async_press()
     assert len(d.writes) == 1
@@ -256,7 +240,6 @@ async def test_stale_entity_baseline_and_feed_reservation_revision_race(
     c.received({"1": encode([meal("08:17")])}, d.generation)
     with pytest.raises(ServiceValidationError):
         await stale.async_set_value(time(9, 31))
-    c.arm_native("feed")
     original = c.save
 
     async def changed_while_saving():
@@ -266,6 +249,6 @@ async def test_stale_entity_baseline_and_feed_reservation_revision_race(
     monkeypatch.setattr(c, "save", changed_while_saving)
     with pytest.raises(ServiceValidationError, match="changed_before_send_no_write"):
         await FeedButton(d).async_press()
-    assert not d.writes and not c.native_armed("feed")
+    assert not d.writes and not c._native_arms
     monkeypatch.setattr(c, "save", original)
     await c.stop()

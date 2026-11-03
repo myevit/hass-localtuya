@@ -19,7 +19,6 @@ from homeassistant.const import (
     CONF_DEVICE_ID,
     CONF_ENTITIES,
     CONF_HOST,
-    CONF_ID,
     CONF_PLATFORM,
     CONF_REGION,
     EVENT_HOMEASSISTANT_STOP,
@@ -414,7 +413,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         if dev.feeder:
             await dev.feeder.start()
 
-    await async_remove_orphan_entities(hass, entry)
     platforms = (
         RUNTIME_PLATFORMS
         if any(dev.feeder for dev in hass_localtuya.devices.values())
@@ -453,7 +451,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if any(dev.feeder for dev in devices.values())
         else PLATFORMS.values()
     )
-    await hass.config_entries.async_unload_platforms(entry, platforms)
+    if not await hass.config_entries.async_unload_platforms(entry, platforms):
+        return False
     hass.data[DOMAIN].pop(entry.entry_id)
 
     _LOGGER.info("Unload completed")
@@ -501,25 +500,6 @@ async def async_remove_config_entry_device(
     _LOGGER.info("Device %s removed.", dev_id)
 
     return True
-
-
-async def async_remove_orphan_entities(hass, entry):
-    """Remove entities associated with config entry that has been removed."""
-    return
-    ent_reg = er.async_get(hass)
-    entities = {
-        ent.unique_id: ent.entity_id
-        for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
-    }
-    _LOGGER.info("ENTITIES ORPHAN %s", entities)
-    return
-
-    for entity in entry.data[CONF_ENTITIES]:
-        if entity[CONF_ID] in entities:
-            del entities[entity[CONF_ID]]
-
-    for entity_id in entities.values():
-        ent_reg.async_remove(entity_id)
 
 
 def _run_async_listen(hass: HomeAssistant, entry: ConfigEntry):

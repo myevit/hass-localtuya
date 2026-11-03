@@ -20,7 +20,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -170,6 +170,25 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         """Subscribe localtuya events."""
         await super().async_added_to_hass()
 
+        # Retire native-owned raw controls without changing IDs or user hiding.
+        # Track only our own migration so deselecting the profile is reversible.
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        options = dict(entry.options.get(DOMAIN, {}))
+        marker = "native_raw_hidden"
+        if self.native_raw_control and entry.hidden_by is None:
+            registry.async_update_entity(
+                self.entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
+            )
+            options[marker] = True
+            registry.async_update_entity_options(self.entity_id, DOMAIN, options)
+        elif not self.native_raw_control and options.pop(marker, False):
+            if entry.hidden_by == er.RegistryEntryHider.INTEGRATION:
+                registry.async_update_entity(self.entity_id, hidden_by=None)
+            registry.async_update_entity_options(
+                self.entity_id, DOMAIN, options or None
+            )
+
         self.debug(f"Adding {self.entity_id} with configuration: {self._config}")
 
         stored_data = await self.async_get_last_state()
@@ -210,6 +229,8 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         entity is restored at startup.
         """
         attributes = {}
+        if self.native_raw_control:
+            attributes["blocked_reason"] = "native_feeder_owns_raw_control"
         if self._state is not None:
             attributes[ATTR_STATE] = self._state
         elif self._last_state is not None:
@@ -262,9 +283,22 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         return f"local_{self._device_config.id}_{self._dp_id}"
 
     @property
+    def native_raw_control(self):
+        """Raw actuators retained for identity, superseded by native typed controls."""
+        return (
+            self._device_config.as_dict().get("feeder_profile")
+            not in (None, "", "none")
+            and str(self._dp_id) in ("1", "2", "3")
+            and self._config.get(CONF_PLATFORM)
+            in ("number", "select", "switch", "button")
+        )
+
+    @property
     def available(self) -> bool:
         """Return if device is available or not."""
-        return (len(self._status) > 0) or self._device.connected
+        return not self.native_raw_control and (
+            (len(self._status) > 0) or self._device.connected
+        )
 
     @property
     def entity_category(self) -> str:

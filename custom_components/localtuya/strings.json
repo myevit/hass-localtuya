@@ -16,9 +16,6 @@
         "switch": {
             "enabled": {
                 "name": "Meal slot {slot} enabled"
-            },
-            "arm_feed": {
-                "name": "Arm feed selected portions (30 seconds)"
             }
         },
         "button": {
@@ -33,24 +30,6 @@
             },
             "acknowledge_restored": {
                 "name": "Acknowledge restored plan for next edit"
-            }
-        },
-        "select": {
-            "delete_selection": {
-                "name": "Arm deletion of meal slot (30 seconds)",
-                "state": {
-                    "none": "No deletion selected",
-                    "slot_1": "Meal slot 1",
-                    "slot_2": "Meal slot 2",
-                    "slot_3": "Meal slot 3",
-                    "slot_4": "Meal slot 4",
-                    "slot_5": "Meal slot 5",
-                    "slot_6": "Meal slot 6",
-                    "slot_7": "Meal slot 7",
-                    "slot_8": "Meal slot 8",
-                    "slot_9": "Meal slot 9",
-                    "slot_10": "Meal slot 10"
-                }
             }
         },
         "sensor": {
@@ -68,6 +47,22 @@
             },
             "feeder_error": {
                 "name": "Feeder error"
+            },
+            "feeder_readiness": {
+                "name": "Feeding readiness",
+                "state": {
+                    "ready": "Ready",
+                    "unavailable": "Disconnected or blocked",
+                    "busy": "Another action is pending",
+                    "unknown_outcome": "Unknown feeding outcome; do not retry",
+                    "schedule_blocked": "No safe meal-plan baseline",
+                    "waiting_for_idle": "Waiting for feeding status",
+                    "not_idle": "Feeder is not idle",
+                    "waiting_for_fault": "Waiting for fault status",
+                    "fault": "Feeder reports a fault",
+                    "waiting_for_power": "Waiting for power telemetry",
+                    "power_restricted": "Power mode does not permit feeding"
+                }
             }
         }
     },

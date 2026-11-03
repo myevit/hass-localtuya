@@ -119,6 +119,9 @@ async def test_status_consumed_by_query_waiter_is_still_one_exact_receipt():
     proto, listener = protocol()
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[proto.dispatcher.RESET_SEQNO] = waiter
+    proto.dispatcher.listener_commands[proto.dispatcher.RESET_SEQNO] = {
+        pytuya.CMDType.STATUS
+    }
     proto.data_received(incoming(proto, {"1": ""}))
     assert waiter.done() and [x[0] for x in listener.frames] == [{"1": ""}]
     assert listener.statuses == []  # legacy waiter behavior is unchanged

@@ -65,13 +65,12 @@ async def test_real_ha_setup_unload_reload_retains_registry_identity(
             f"local_synthetic-device_{key}"
             for key in (
                 "manual_portions",
-                "arm_feed",
                 "feed",
                 "add_meal",
                 "acknowledge_restored",
-                "delete_selection",
                 "feeder_status",
                 "feeder_error",
+                "feeder_readiness",
             )
         },
     }
