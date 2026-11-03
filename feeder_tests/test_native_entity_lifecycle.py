@@ -82,12 +82,25 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     ghosts = []
     for config in configs:
         for domain, key in (("switch", "arm_feed"), ("select", "delete_selection")):
-            ghosts.append(registry.async_get_or_create(
-                domain, "localtuya", f"local_{config['device_id']}_{key}",
-                config_entry=entry,
-            ))
+            ghosts.append(
+                registry.async_get_or_create(
+                    domain,
+                    "localtuya",
+                    f"local_{config['device_id']}_{key}",
+                    config_entry=entry,
+                )
+            )
+    user_raw = registry.async_get_entity_id(
+        "number", "localtuya", "local_synthetic-second_3"
+    )
+    registry.async_update_entity(user_raw, hidden_by=er.RegistryEntryHider.USER)
+    registry.async_update_entity_options(user_raw, "localtuya", None)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    assert registry.async_get(user_raw).hidden_by == er.RegistryEntryHider.USER
+    assert "native_raw_hidden" not in registry.async_get(user_raw).options.get(
+        "localtuya", {}
+    )
     assert entry.state.value == "loaded"
     all_devices = list(hass.data["localtuya"][entry.entry_id].devices.values())
     devices = [device for device in all_devices if device.feeder]
@@ -152,9 +165,21 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
         if r.unique_id.startswith("local_synthetic-legacy_")
     } == {"local_synthetic-legacy_1", "local_synthetic-legacy_3"}
     raw = registry.async_get(eid(dev, "number", "3"))
-    assert hass.states.get(raw.entity_id).state == "unavailable"
-    assert raw.hidden_by is None  # no registry preference is overwritten
-    assert "blocked_reason" not in hass.states.get(eid(all_devices[2], "number", "3")).attributes
+    raw_state = hass.states.get(raw.entity_id)
+    assert raw_state.state == "unavailable"
+    assert (
+        "blocked_reason" not in raw_state.attributes
+    )  # HA suppresses unavailable extra attrs
+    assert {
+        key: raw_state.attributes[key] for key in ("min", "max", "step", "mode")
+    } == {"min": 1, "max": 60, "step": 1.0, "mode": "auto"}
+    assert raw.hidden_by == er.RegistryEntryHider.INTEGRATION
+    assert raw.options["localtuya"]["native_raw_hidden"] is True
+    assert registry.async_get(eid(all_devices[2], "number", "3")).hidden_by is None
+    assert (
+        "blocked_reason"
+        not in hass.states.get(eid(all_devices[2], "number", "3")).attributes
+    )
     assert registry.async_get(eid(dev, "sensor", "1")).entity_category is None
     assert hass.states.get(eid(dev, "time", "meal_slot_1_time")).state == "08:17:00"
     assert (
@@ -195,6 +220,29 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     assert restored[0].feeder.manual_portions == 8
     assert not restored[0].feeder._native_arms
     assert registry.async_get(third.entity_id).hidden_by == er.RegistryEntryHider.USER
-    assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 44  # includes two preserved unselected-device ghosts
+    assert (
+        len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 44
+    )  # includes two preserved unselected-device ghosts
+    await hass.config_entries.async_unload(entry.entry_id)
+    raw_user = eid(devices[1], "number", "3")
+    raw_legacy = eid(all_devices[2], "number", "3")
+    registry.async_update_entity(raw_user, hidden_by=er.RegistryEntryHider.USER)
+    registry.async_update_entity(
+        raw_legacy, hidden_by=er.RegistryEntryHider.INTEGRATION
+    )
+    from copy import deepcopy
+
+    data = deepcopy(dict(entry.data))
+    for config in data["devices"].values():
+        config["feeder_profile"] = "none"
+    hass.config_entries.async_update_entry(entry, data=data)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert registry.async_get(raw.entity_id).hidden_by is None
+    assert "native_raw_hidden" not in registry.async_get(raw.entity_id).options.get(
+        "localtuya", {}
+    )
+    assert registry.async_get(raw_user).hidden_by == er.RegistryEntryHider.USER
+    assert registry.async_get(raw_legacy).hidden_by == er.RegistryEntryHider.INTEGRATION
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_stop()

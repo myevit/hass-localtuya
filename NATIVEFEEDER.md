@@ -158,6 +158,14 @@ but invalid profile is a setup error, not permission to fall back to raw feeder
 control. Correct its model, product, protocol and quantity mapping before retrying.
 An unselected profile keeps normal LocalTuya behavior.
 
+Native-owned legacy raw controls remain unavailable and are integration-hidden
+without changing entity IDs or user-hidden preferences. HA intentionally omits
+extra state attributes while unavailable, so their dialogs do not promise a
+`blocked_reason` explanation. Integration hiding affects generated dashboards;
+HA can still list these entities on the device configuration page. Deselecting
+the profile reverses only hiding recorded by this integration, not unrelated
+integration hiding or user hiding. Use the native controls and readiness sensor.
+
 This contribution was developed with AI assistance (Hermes Agent by Nous Research,
 OpenAI GPT-6.1). It needs independent maintainer review before upstream acceptance.
 The integration remains GPL-3.0; adapted MIT material is attributed in

@@ -20,7 +20,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -169,6 +169,25 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
     async def async_added_to_hass(self):
         """Subscribe localtuya events."""
         await super().async_added_to_hass()
+
+        # Retire native-owned raw controls without changing IDs or user hiding.
+        # Track only our own migration so deselecting the profile is reversible.
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        options = dict(entry.options.get(DOMAIN, {}))
+        marker = "native_raw_hidden"
+        if self.native_raw_control and entry.hidden_by is None:
+            registry.async_update_entity(
+                self.entity_id, hidden_by=er.RegistryEntryHider.INTEGRATION
+            )
+            options[marker] = True
+            registry.async_update_entity_options(self.entity_id, DOMAIN, options)
+        elif not self.native_raw_control and options.pop(marker, False):
+            if entry.hidden_by == er.RegistryEntryHider.INTEGRATION:
+                registry.async_update_entity(self.entity_id, hidden_by=None)
+            registry.async_update_entity_options(
+                self.entity_id, DOMAIN, options or None
+            )
 
         self.debug(f"Adding {self.entity_id} with configuration: {self._config}")
 
