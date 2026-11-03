@@ -210,6 +210,8 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         entity is restored at startup.
         """
         attributes = {}
+        if self.native_raw_control:
+            attributes["blocked_reason"] = "native_feeder_owns_raw_control"
         if self._state is not None:
             attributes[ATTR_STATE] = self._state
         elif self._last_state is not None:
@@ -262,9 +264,20 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         return f"local_{self._device_config.id}_{self._dp_id}"
 
     @property
+    def native_raw_control(self):
+        """Raw actuators retained for identity, superseded by native typed controls."""
+        return (
+            self._device_config.as_dict().get("feeder_profile") not in (None, "", "none")
+            and str(self._dp_id) in ("1", "2", "3")
+            and self._config.get(CONF_PLATFORM) in ("number", "select", "switch", "button")
+        )
+
+    @property
     def available(self) -> bool:
         """Return if device is available or not."""
-        return (len(self._status) > 0) or self._device.connected
+        return not self.native_raw_control and (
+            (len(self._status) > 0) or self._device.connected
+        )
 
     @property
     def entity_category(self) -> str:

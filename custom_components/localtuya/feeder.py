@@ -170,7 +170,6 @@ class FeederCapability:
         self.feed_uncertain = False
         self.last_feed_at = None
         self.manual_portions = 1
-        self.native_delete_slot = None
         self.native_arm_seconds = 30
         self._native_arms = {}
         self._disconnected = False
@@ -251,6 +250,8 @@ class FeederCapability:
         try:
             if type(saved) is not dict:
                 raise ValueError("Invalid stored snapshot")
+            if saved.get("error") is not None and type(saved["error"]) is not str:
+                raise ValueError("Invalid stored error")
             raw = saved["raw"]
             meals = decode(raw) if raw is not None else None
             revision = saved["revision"]
@@ -320,30 +321,22 @@ class FeederCapability:
             listener()
 
     def _native_token(self, kind):
-        """Exact native form baseline and selection, never persisted."""
-        parameter = (
-            self.manual_portions
-            if kind == "feed"
-            else (self.native_delete_slot if kind == "delete" else None)
-        )
+        """Exact restored-plan baseline, never persisted."""
         return (
             self.device.generation,
             self.revision,
             self.raw,
             self.snapshot_source,
             self.uncertain,
-            parameter,
         )
 
     def clear_native_arm(self, kind):
         """Discard one short-lived native confirmation."""
         if arm := self._native_arms.pop(kind, None):
             arm[2].cancel()
-        if kind == "delete":
-            self.native_delete_slot = None
 
-    def native_armed(self, kind, slot=None):
-        """Never authorize a different quantity, slot, revision or connection."""
+    def native_armed(self, kind):
+        """Never acknowledge a different restored revision or connection."""
         arm = self._native_arms.get(kind)
         return bool(
             arm
@@ -354,12 +347,11 @@ class FeederCapability:
             and not self.error
             and arm[0] == self._native_token(kind)
             and self.hass.loop.time() < arm[1]
-            and (kind != "delete" or slot is None or slot == self.native_delete_slot)
         )
 
-    def arm_native(self, kind, slot=None):
+    def arm_native(self, kind):
         """Bind a native action to the visible baseline for thirty seconds."""
-        if kind not in ("feed", "delete", "restored"):
+        if kind != "restored":
             raise ServiceValidationError("Unsupported native action")
         self.clear_native_arm(kind)
         if (
@@ -369,16 +361,9 @@ class FeederCapability:
             or self.error
             or self.uncertain
             or self.feed_uncertain
-            or (kind == "feed" and not self.feed_ready)
-            or (kind == "restored" and self.snapshot_source != "restored")
-            or (
-                kind == "delete"
-                and (type(slot) is not int or not 0 <= slot < len(self.meals))
-            )
+            or self.snapshot_source != "restored"
         ):
             raise ServiceValidationError("No safe baseline for this confirmation")
-        if kind == "delete":
-            self.native_delete_slot = slot
 
         def expire():
             self.clear_native_arm(kind)
@@ -391,9 +376,9 @@ class FeederCapability:
         )
         self.publish()
 
-    def consume_native_arm(self, kind, slot=None):
+    def consume_native_arm(self, kind):
         """Consume before awaiting; failure must require a new confirmation."""
-        valid = self.native_armed(kind, slot)
+        valid = self.native_armed(kind)
         self.clear_native_arm(kind)
         self.publish()
         if not valid:
@@ -537,6 +522,31 @@ class FeederCapability:
             and self._telemetry["13"] == 0
             and self._telemetry.get("101") == "strong_power"
         )
+
+    @property
+    def feed_blocked_reason(self):
+        """Read-only explanation; never relax the controller's conservative gates."""
+        if not self.ready:
+            return "unavailable"
+        if self.lock.locked():
+            return "busy"
+        if self.feed_uncertain:
+            return "unknown_outcome"
+        if self.error or self.uncertain or self.meals is None:
+            return "schedule_blocked"
+        if "4" not in self._telemetry:
+            return "waiting_for_idle"
+        if self._telemetry["4"] not in ("standby", "done"):
+            return "not_idle"
+        if type(self._telemetry.get("13")) is not int:
+            return "waiting_for_fault"
+        if self._telemetry["13"] != 0:
+            return "fault"
+        if "101" not in self._telemetry:
+            return "waiting_for_power"
+        if self._telemetry["101"] != "strong_power":
+            return "power_restricted"
+        return None
 
     def _validate_action(self):
         if self.closed or self.lock.locked() or self.feed_uncertain:

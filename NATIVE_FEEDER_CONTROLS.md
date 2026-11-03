@@ -16,25 +16,31 @@ scheduler is required. The existing plan sensor ID and attributes, and all
   at the first unused minute starting at `00:00`. This is an intentional schedule
   write. Edit its time and portions, then explicitly enable it. Ten slots maximum.
   Existing duplicate times remain valid and are not rewritten or deduplicated.
-- To delete, select the target in **Arm deletion of meal slot (30 seconds)**,
-  then press that slot's **Delete** button within 30 seconds. Other slots cannot
-  use its confirmation. The grant is consumed even if the operation fails. The
-  last remaining slot cannot be deleted; disable it instead.
+- To delete, deliberately press that slot's **Delete** button. The button
+  captures the displayed plan and slot before awaiting. The last remaining slot
+  cannot be deleted; disable it instead. No shared deletion selection is needed.
 - **Manual feed portions** restores a local selection (1–60, default 1). Editing
-  or restoring it never sends DP3. Turn on **Arm feed selected portions
-  (30 seconds)**, then press **Feed selected portions now**. This captures one
-  exact quantity, consumes the arm and sends at most one command. Changing the
-  quantity or schedule invalidates the arm. There is no automatic retry.
+  or restoring it never sends DP3. Deliberately press **Feed selected portions now**
+  to confirm dispensing the quantity captured at the press. At most one command
+  is sent per accepted action; there is no automatic retry or separate arm switch.
 - **Acknowledge restored plan for next edit** authorizes one mutation of exactly
   the displayed restored revision for 30 seconds. It does not label it received,
   clear uncertainty, or override a malformed/blocked baseline. Revision, raw plan,
   source or connection changes, disconnect and unload invalidate the grant.
+- **Feeding readiness** explains missing feeding/fault/power telemetry and blocked
+  gates separately from transaction errors. Unknown power modes remain blocked;
+  `strong_power` is the only accepted raw power value. The inspected model schema
+  lists `strong_power` and `battery_power` (not `weak_power`). No electrical-source meaning
+  is inferred without verified schema documentation.
 - **Feeder status**, **Feeder error** and **Last feed** report controller outcomes.
   Last feed remains the genuine observed feeding-start edge, not proof of full
   dispensing. Button timestamps mean a press, not device confirmation. Unknown
   outcomes are not invitations to retry; inspect the feeder.
 
-Arming is local, volatile and short-lived; it never restores after a restart.
+Restored-plan acknowledgement is local, one-use and short-lived; it never restores
+after a restart. Obsolete owned feed-arm and delete-selection registry entries are
+removed on selected-profile setup. Raw DP1/2/3 actuator entities keep their IDs and
+user registry choices, but are unavailable with a native-ownership reason.
 All controls use the existing serialized controller, whole-plan validation,
 pre-send revision/generation checks, persistent reservation, single-send
 transport and matching report confirmation. Merely displaying controls, startup,
@@ -59,7 +65,10 @@ intent in a more-info dialog** after HA has refreshed that entity in the
 background. Reopen/recheck after plan changes, especially deletion/compaction.
 The optional card retains its stronger explicit `expected_revision` contract.
 Native button entities do not provide a custom parameterized confirmation modal;
-the explicit select/arm-then-button interactions above are the native alternative.
+a deliberate Feed or per-slot Delete press is confirmation under this policy.
+Merely opening or closing a dialog sends nothing; a native button press is not a
+browser-specific parameterized confirmation. The optional card keeps its explicit
+confirmation and cancellation workflow unchanged.
 
 Time dispatch is runtime-only for entries containing the native capability; it
 is deliberately absent from the generic DP platform chooser/catalogue.
@@ -68,8 +77,8 @@ Unselected devices retain their existing platforms and behavior.
 ## Qualification and activation
 
 The offline suites use real HA platform/service/registry lifecycle with synthetic
-identities and blocked TCP/UDP. They cover native time/number/switch/button/select
-dispatch, byte preservation, target-bound confirmations, revision races, two
+identities and blocked TCP/UDP. They cover native time/number/switch/button
+dispatch, byte preservation, captured button parameters and restored acknowledgements, revision races, two
 feeders plus an unselected device, dynamic slot visibility, local restoration,
 unload/reload and legacy compatibility. The existing optional-card Chromium
 contract can be exercised unchanged against this backend.

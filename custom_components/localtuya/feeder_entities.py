@@ -6,7 +6,6 @@ from datetime import time
 from homeassistant.components.time import TimeEntity
 from homeassistant.components.number import NumberEntity, RestoreNumber, NumberMode
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.components.select import SelectEntity
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.exceptions import ServiceValidationError
@@ -229,29 +228,6 @@ class ManualPortions(FeederEntity, RestoreNumber):
         self.capability.set_manual_portions(value)
 
 
-class ArmFeed(FeederEntity, SwitchEntity):
-    """Deliberately arm the exact selected quantity for thirty seconds."""
-
-    def __init__(self, device):
-        super().__init__(device, "arm_feed")
-
-    @property
-    def available(self):
-        return super().available and self.capability.feed_ready
-
-    @property
-    def is_on(self):
-        return self.capability.native_armed("feed")
-
-    async def async_turn_on(self, **kwargs):
-        self.baseline()
-        self.capability.arm_native("feed")
-
-    async def async_turn_off(self, **kwargs):
-        self.capability.clear_native_arm("feed")
-        self.capability.publish()
-
-
 class FeedButton(FeederEntity, ButtonEntity):
     """A confirmation button, not a raw DP3 number."""
 
@@ -260,75 +236,32 @@ class FeedButton(FeederEntity, ButtonEntity):
 
     @property
     def available(self):
-        return (
-            super().available
-            and self.capability.feed_ready
-            and self.capability.native_armed("feed")
-        )
+        return super().available and self.capability.feed_ready
 
     async def async_press(self):
         portions = self.capability.manual_portions
         revision = self.baseline()
-        self.capability.consume_native_arm("feed")
         check_result(
             await self.capability.feed(portions, True, expected_revision=revision)
         )
 
 
-class DeleteSelection(FeederEntity, SelectEntity):
-    """Selecting an exact slot arms only that slot's delete button."""
-
-    def __init__(self, device):
-        super().__init__(device, "delete_selection")
-
-    @property
-    def options(self):
-        return ["none"] + [f"slot_{i + 1}" for i in range(len(self.view_meals))]
-
-    @property
-    def current_option(self):
-        c = self.capability
-        return (
-            f"slot_{c.native_delete_slot + 1}" if c.native_armed("delete") else "none"
-        )
-
-    async def async_select_option(self, option):
-        self.baseline()
-        if option not in self.options:
-            raise ServiceValidationError("Meal slot is absent")
-        if option == "none":
-            self.capability.clear_native_arm("delete")
-            self.capability.publish()
-        else:
-            self.capability.arm_native("delete", int(option[5:]) - 1)
-
-
 class DeleteMeal(FeederEntity, ButtonEntity):
-    """Only the explicitly armed positional slot can be deleted."""
+    """A deliberate press deletes exactly this captured positional slot."""
 
     def __init__(self, device, slot):
         super().__init__(device, "delete", slot)
 
     @property
     def available(self):
-        return (
-            super().available
-            and len(self.view_meals) > 1
-            and self.capability.native_armed("delete", self.slot)
-        )
+        return super().available and len(self.view_meals) > 1
 
     async def async_press(self):
         revision = self.baseline()
-        self.capability.consume_native_arm("delete", self.slot)
+        meals = deepcopy(self.view_meals)
+        del meals[self.slot]
         acknowledged = self.acknowledge_restored()
-        check_result(
-            await self.capability.meal_action(
-                "delete",
-                revision,
-                self.slot,
-                acknowledge_restored_snapshot=acknowledged,
-            )
-        )
+        check_result(await self.capability.set_schedule(revision, meals, acknowledged))
 
 
 class AddMeal(FeederEntity, ButtonEntity):
@@ -420,8 +353,31 @@ class FeederStatus(FeederEntity, SensorEntity):
             "snapshot_source": c.snapshot_source,
             "revision": c.revision,
             "restored_acknowledged": c.native_armed("restored"),
-            "arming_seconds": c.native_arm_seconds,
+            "acknowledgement_seconds": c.native_arm_seconds,
+            "blocked_reason": c.feed_blocked_reason,
         }
+
+
+class FeederReadiness(FeederEntity, SensorEntity):
+    """Explain conservative feed gates without calling a blocked state an error."""
+
+    _attr_device_class = "enum"
+    _attr_options = [
+        "ready", "unavailable", "busy", "unknown_outcome", "schedule_blocked",
+        "waiting_for_idle", "not_idle", "waiting_for_fault", "fault",
+        "waiting_for_power", "power_restricted",
+    ]
+
+    def __init__(self, device):
+        super().__init__(device, "feeder_readiness")
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        return self.capability.feed_blocked_reason or "ready"
 
 
 class FeederError(FeederEntity, SensorEntity):
@@ -452,10 +408,9 @@ def setup_native_platform(domain, hass, entry, add_entities):
     factories = {
         "time": ([], MealTime),
         "number": ([ManualPortions], MealPortions),
-        "switch": ([ArmFeed], MealEnabled),
+        "switch": ([], MealEnabled),
         "button": ([FeedButton, AddMeal, AcknowledgeRestored], DeleteMeal),
-        "select": ([DeleteSelection], None),
-        "sensor": ([FeederStatus, FeederError], None),
+        "sensor": ([FeederStatus, FeederError, FeederReadiness], None),
     }
     if domain not in factories:
         return
@@ -463,6 +418,14 @@ def setup_native_platform(domain, hass, entry, add_entities):
     for device in hass.data[DOMAIN][entry.entry_id].devices.values():
         if device.feeder is None:
             continue
+        # Retire only exact integration-owned obsolete controls for this selected device.
+        registry = er.async_get(hass)
+        for old_domain, key in (("switch", "arm_feed"), ("select", "delete_selection")):
+            entity_id = registry.async_get_entity_id(
+                old_domain, DOMAIN, f"local_{device.id}_{key}"
+            )
+            if entity_id and registry.async_get(entity_id).config_entry_id == entry.entry_id:
+                registry.async_remove(entity_id)
         add_entities([factory(device) for factory in common])
         if slot_factory is not None:
             # Bind loop variables explicitly: two feeders must never share a callback.

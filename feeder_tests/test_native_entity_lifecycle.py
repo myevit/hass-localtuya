@@ -77,6 +77,17 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     )
     await hass.config_entries.async_add(entry)
     await hass.async_block_till_done()
+    await hass.config_entries.async_unload(entry.entry_id)
+    registry = er.async_get(hass)
+    ghosts = []
+    for config in configs:
+        for domain, key in (("switch", "arm_feed"), ("select", "delete_selection")):
+            ghosts.append(registry.async_get_or_create(
+                domain, "localtuya", f"local_{config['device_id']}_{key}",
+                config_entry=entry,
+            ))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     assert entry.state.value == "loaded"
     all_devices = list(hass.data["localtuya"][entry.entry_id].devices.values())
     devices = [device for device in all_devices if device.feeder]
@@ -131,12 +142,19 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
         await hass.async_block_till_done()
 
     entries = er.async_entries_for_config_entry(registry, entry.entry_id)
-    assert len(entries) == 40  # 19 per supported feeder; two unchanged legacy entities
+    assert all(registry.async_get(g.entity_id) is None for g in ghosts[:4])
+    assert all(registry.async_get(g.entity_id) is not None for g in ghosts[4:])
+    entries = [r for r in entries if r not in ghosts[4:]]
+    assert len(entries) == 38  # 18 per supported feeder; two unchanged legacy entities
     assert {
         r.unique_id
         for r in entries
         if r.unique_id.startswith("local_synthetic-legacy_")
     } == {"local_synthetic-legacy_1", "local_synthetic-legacy_3"}
+    raw = registry.async_get(eid(dev, "number", "3"))
+    assert hass.states.get(raw.entity_id).state == "unavailable"
+    assert raw.hidden_by is None  # no registry preference is overwritten
+    assert "blocked_reason" not in hass.states.get(eid(all_devices[2], "number", "3")).attributes
     assert registry.async_get(eid(dev, "sensor", "1")).entity_category is None
     assert hass.states.get(eid(dev, "time", "meal_slot_1_time")).state == "08:17:00"
     assert (
@@ -152,7 +170,6 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     assert not dev.feeder.meals[2]["enabled"]
     third = registry.async_get(eid(dev, "time", "meal_slot_3_time"))
     assert third.hidden_by is None
-    await call("select", "select_option", "delete_selection", option="slot_2")
     await call("button", "press", "meal_slot_2_delete")
     assert dev.feeder.meals[1]["time"] == "00:00"
     assert hass.states.get(third.entity_id).state == "unavailable"
@@ -166,7 +183,6 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     registry.async_update_entity(third.entity_id, hidden_by=er.RegistryEntryHider.USER)
     await call("number", "set_value", "manual_portions", value=8)
     assert all("3" not in command for command in writes[0])
-    await call("switch", "turn_on", "arm_feed")
     await call("button", "press", "feed")
     assert [command for command in writes[0] if "3" in command] == [{"3": 8}]
     assert not dev.feeder._native_arms
@@ -179,6 +195,6 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     assert restored[0].feeder.manual_portions == 8
     assert not restored[0].feeder._native_arms
     assert registry.async_get(third.entity_id).hidden_by == er.RegistryEntryHider.USER
-    assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 44
+    assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 44  # includes two preserved unselected-device ghosts
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_stop()
