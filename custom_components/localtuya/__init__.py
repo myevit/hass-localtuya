@@ -453,7 +453,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if any(dev.feeder for dev in devices.values())
         else PLATFORMS.values()
     )
-    await hass.config_entries.async_unload_platforms(entry, platforms)
+    if not await hass.config_entries.async_unload_platforms(entry, platforms):
+        return False
     hass.data[DOMAIN].pop(entry.entry_id)
 
     _LOGGER.info("Unload completed")
