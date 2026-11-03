@@ -43,6 +43,7 @@ import binascii
 import hmac
 import json
 import logging
+import math
 import struct
 import time
 import weakref
@@ -1100,6 +1101,17 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             #     )
             # json_payload = self.error_json(ERR_JSON, payload)
 
+        # Validate object shapes before either native or legacy publication.
+        if not isinstance(json_payload, dict):
+            return self.error_json(ERR_JSON)
+        if "data" in json_payload and not isinstance(json_payload["data"], dict):
+            return self.error_json(ERR_JSON)
+        if "data" in json_payload and "dps" in json_payload["data"]:
+            if not isinstance(json_payload["data"]["dps"], dict):
+                return self.error_json(ERR_JSON)
+        if "dps" in json_payload and not isinstance(json_payload["dps"], dict):
+            return self.error_json(ERR_JSON)
+
         # v3.4 stuffs it into {"data":{"dps":{"1":true}}, ...}
         if (
             "dps" not in json_payload
@@ -1113,6 +1125,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         # We will store the payload to trigger an event in HA.
         if "dps" in json_payload:
+            # DP types/ranges belong to device profiles; reject only non-scalar values here.
+            json_payload["dps"] = {
+                dp: value
+                for dp, value in json_payload["dps"].items()
+                if isinstance(value, (str, bool, int, float))
+                and (not isinstance(value, float) or math.isfinite(value))
+            }
             self.dispatched_dps = json_payload["dps"]
         return json_payload
 
