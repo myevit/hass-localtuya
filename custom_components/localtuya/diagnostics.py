@@ -6,6 +6,7 @@ import copy
 import logging
 from typing import Any
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_DEVICES
 from homeassistant.core import HomeAssistant
@@ -58,9 +59,6 @@ async def async_get_device_diagnostics(
     data = {}
     dev_id = list(device.identifiers)[0][1].split("_")[-1]
     data[DEVICE_CONFIG] = entry.data[CONF_DEVICES][dev_id].copy()
-    # NOT censoring private information on device diagnostic data
-    # local_key = data[DEVICE_CONFIG][CONF_LOCAL_KEY]
-    # data[DEVICE_CONFIG][CONF_LOCAL_KEY] = f"{local_key[0:3]}...{local_key[-3:]}"
 
     hass_localtuya: HassLocalTuyaData = hass.data[DOMAIN][entry.entry_id]
     tuya_api = hass_localtuya.cloud_data
@@ -70,15 +68,11 @@ async def async_get_device_diagnostics(
         for obf, obf_len in DATA_OBFUSCATE.items():
             if ob := data[DEVICE_CLOUD_INFO].get(obf):
                 data[DEVICE_CLOUD_INFO][obf] = obfuscate(ob, obf_len, obf_len)
-        # NOT censoring private information on device diagnostic data
-        # local_key = data[DEVICE_CLOUD_INFO][CONF_LOCAL_KEY]
-        # local_key_obfuscated = "{local_key[0:3]}...{local_key[-3:]}"
-        # data[DEVICE_CLOUD_INFO][CONF_LOCAL_KEY] = local_key_obfuscated
 
     # data["log"] = hass.data[DOMAIN][CONF_DEVICES][dev_id].logger.retrieve_log()
     if discovery := hass.data[DOMAIN].get(DATA_DISCOVERY):
         data["Discovered_Devices"] = discovery.devices.get(dev_id)
-    return data
+    return async_redact_data(data, {CONF_LOCAL_KEY})
 
 
 def obfuscate(key, start_characters=3, end_characters=3) -> str:
