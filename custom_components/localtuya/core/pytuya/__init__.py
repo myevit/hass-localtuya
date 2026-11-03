@@ -279,6 +279,7 @@ class MessageDispatcher(ContextualLogger):
         super().__init__()
         self.buffer = b""
         self.listeners: dict[str, asyncio.Future] = {}
+        self.listener_commands = {}
         self.callback_status_update = callback_status_update
         self.callback_frame = callback_frame
         self.version = protocol_version
@@ -289,8 +290,11 @@ class MessageDispatcher(ContextualLogger):
         for feat in self.listeners.copy():
             feature = self.listeners.pop(feat)
             feature.cancel("aborted")
+        self.listener_commands.clear()
 
-    async def wait_for(self, seqno, cmd, timeout=TIMEOUT_REPLY):
+    async def wait_for(
+        self, seqno, cmd, timeout=TIMEOUT_REPLY, *, response_commands=None
+    ):
         """Wait for response to a sequence number to be received and return it."""
         if seqno in self.listeners:
             self.debug(f"listener exists for {seqno}")
@@ -300,6 +304,19 @@ class MessageDispatcher(ContextualLogger):
         self.debug("Command %d waiting for seq. number %d", cmd, seqno)
         future = asyncio.Future()
         self.listeners[seqno] = future
+        # Replies may use protocol-defined aliases, but never arbitrary commands.
+        self.listener_commands[seqno] = (
+            frozenset(response_commands)
+            if response_commands is not None
+            else {
+                CMDType.DP_QUERY: {CMDType.DP_QUERY, CMDType.STATUS},
+                CMDType.DP_QUERY_NEW: {CMDType.DP_QUERY_NEW, CMDType.STATUS},
+                CMDType.CONTROL: {CMDType.CONTROL, CMDType.CONTROL_NEW},
+                CMDType.CONTROL_NEW: {CMDType.CONTROL, CMDType.CONTROL_NEW},
+                CMDType.UPDATEDPS: {CMDType.UPDATEDPS, CMDType.STATUS},
+                CMDType.SESS_KEY_NEG_START: {CMDType.SESS_KEY_NEG_RESP},
+            }.get(cmd, {cmd})
+        )
         try:
             response = await asyncio.wait_for(future, timeout=timeout)
             return response
@@ -310,16 +327,21 @@ class MessageDispatcher(ContextualLogger):
             )
         finally:
             self.listeners.pop(seqno, True)
+            self.listener_commands.pop(seqno, None)
 
     def _release_listener(self, seqno, msg):
-        if seqno not in self.listeners:
-            return
+        if seqno not in self.listeners or msg.cmd not in self.listener_commands.get(
+            seqno, ()
+        ):
+            return False
 
         future = self.listeners[seqno]
         if isinstance(future, asyncio.Future) and not future.done():
             future.set_result(msg)
+            return True
         else:
             self.debug(f"{seqno} - Got additional message without request: skip {msg}")
+        return False
 
     def add_data(self, data: bytes):
         """Add new data to the buffer and try to parse messages."""
@@ -425,9 +447,8 @@ class MessageDispatcher(ContextualLogger):
             self.debug("Got key negotiation response")
             self._release_listener(self.SESS_KEY_SEQNO, msg)
         elif msg.cmd == CMDType.STATUS:
-            if self.RESET_SEQNO in self.listeners:
+            if self._release_listener(self.RESET_SEQNO, msg):
                 self.debug("Got reset status update")
-                self._release_listener(self.RESET_SEQNO, msg)
             else:
                 self.debug("Got status update")
                 self.callback_status_update(msg)
@@ -853,7 +874,15 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             await self.transport_write(enc_payload)
         except Exception:  # pylint: disable=broad-except
             return self.clean_up_session()
-        msg = await self.dispatcher.wait_for(seqno, payload.cmd)
+        msg = await self.dispatcher.wait_for(
+            seqno,
+            payload.cmd,
+            response_commands=(
+                {payload.cmd, command, CMDType.STATUS}
+                if command in (CMDType.DP_QUERY, CMDType.DP_QUERY_NEW)
+                else None
+            ),
+        )
         if msg is None:
             self.debug("Wait was aborted for seqno %d", seqno)
             return None

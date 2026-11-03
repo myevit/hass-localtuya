@@ -89,6 +89,7 @@ async def test_invalid_integrity_cannot_publish_or_complete_waiter(version):
     invalid[-5] ^= 1  # CRC, HMAC or GCM tag, never the framing suffix.
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
+    proto.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
     proto.data_received(bytes(invalid))
     assert not waiter.done()
     assert listener.frames == listener.statuses == []
@@ -104,6 +105,7 @@ async def test_invalid_gcm_chosen_plaintext_rejected_and_next_packet_recovers():
     proto, listener = protocol()
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
+    proto.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
     proto.data_received(chosen_plaintext_packet(proto))
     assert not waiter.done()
     assert listener.frames == listener.statuses == []
@@ -217,6 +219,8 @@ async def test_equal_sequence_numbers_remain_per_device():
     wb = asyncio.get_running_loop().create_future()
     a.dispatcher.listeners[7] = wa
     b.dispatcher.listeners[7] = wb
+    a.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
+    b.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
     wire = packet(a, {"1": "a"})
     a.data_received(wire[:23])
     b.data_received(packet(b, {"1": "b"}))
@@ -251,6 +255,7 @@ async def test_empty_response_and_existing_maximum_length(version, maximum):
     assert header.length == (2000 if maximum else overhead)
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
+    proto.dispatcher.listener_commands[7] = {pytuya.CMDType.HEART_BEAT}
     proto.data_received(wire[:-1])
     assert not waiter.done()
     assert len(proto.dispatcher.buffer) < 2022
@@ -300,6 +305,7 @@ async def test_coalesced_bad_tag_then_valid_frame():
     proto, listener = protocol()
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
+    proto.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
     proto.data_received(chosen_plaintext_packet(proto) + packet(proto))
     assert waiter.done() and waiter.result().crc_good
     assert listener.frames == listener.statuses == [{"1": "synthetic"}]
@@ -312,6 +318,7 @@ async def test_coalesced_invalid_integrity_then_valid_frame(version):
     proto, listener = protocol(version)
     waiter = asyncio.get_running_loop().create_future()
     proto.dispatcher.listeners[7] = waiter
+    proto.dispatcher.listener_commands[7] = {pytuya.CMDType.STATUS}
     invalid = bytearray(packet(proto, {"1": "forged"}, 6))
     invalid[-5] ^= 1
     proto.data_received(bytes(invalid) + packet(proto))
