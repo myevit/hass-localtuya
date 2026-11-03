@@ -134,7 +134,19 @@ class FeederEntity(Entity):
         return False
 
 
-class MealTime(FeederEntity, TimeEntity):
+class ScheduleEditEntity(FeederEntity):
+    """Expose edits only when the controller can accept their provenance."""
+
+    @property
+    def available(self):
+        c = self.capability
+        return super().available and (
+            c.snapshot_source == "received"
+            or (c.snapshot_source == "restored" and c.native_armed("restored"))
+        )
+
+
+class MealTime(ScheduleEditEntity, TimeEntity):
     """Minute resolution in feeder-local time, without clock management."""
 
     def __init__(self, device, slot):
@@ -155,7 +167,7 @@ class MealTime(FeederEntity, TimeEntity):
         await self.edit("time", value.strftime("%H:%M"))
 
 
-class MealPortions(FeederEntity, NumberEntity):
+class MealPortions(ScheduleEditEntity, NumberEntity):
     """Edit only the selected slot's quantity."""
 
     _attr_native_min_value = 1
@@ -180,7 +192,7 @@ class MealPortions(FeederEntity, NumberEntity):
         await self.edit("portions", int(value))
 
 
-class MealEnabled(FeederEntity, SwitchEntity):
+class MealEnabled(ScheduleEditEntity, SwitchEntity):
     """Edit only the selected slot's enable byte."""
 
     def __init__(self, device, slot):
@@ -246,7 +258,7 @@ class FeedButton(FeederEntity, ButtonEntity):
         )
 
 
-class DeleteMeal(FeederEntity, ButtonEntity):
+class DeleteMeal(ScheduleEditEntity, ButtonEntity):
     """A deliberate press deletes exactly this captured positional slot."""
 
     def __init__(self, device, slot):
@@ -264,7 +276,7 @@ class DeleteMeal(FeederEntity, ButtonEntity):
         check_result(await self.capability.set_schedule(revision, meals, acknowledged))
 
 
-class AddMeal(FeederEntity, ButtonEntity):
+class AddMeal(ScheduleEditEntity, ButtonEntity):
     """Append one disabled every-day slot at the first unused minute."""
 
     def __init__(self, device):

@@ -219,6 +219,54 @@ async def test_real_ha_native_service_dispatch_two_feeders_and_reload(
     restored = list(hass.data["localtuya"][entry.entry_id].devices.values())
     assert restored[0].feeder.manual_portions == 8
     assert not restored[0].feeder._native_arms
+    # A restored plan is visible in Details, but native edits require one-use ack.
+    dev = restored[0]
+    proto = pytuya.TuyaProtocol(dev.id, dev.local_key, 3.5, False, dev)
+    proto.connection_made(Transport())
+    proto.local_key = b"fedcba9876543210"
+    dev._interface = proto
+    dev.feeder.received(
+        {"4": "standby", "13": 0, "101": "strong_power"}, dev.generation
+    )
+    await hass.async_block_till_done()
+    controls = [
+        ("button", "add_meal"),
+        ("button", "meal_slot_1_delete"),
+        ("time", "meal_slot_1_time"),
+        ("number", "meal_slot_1_portions"),
+        ("switch", "meal_slot_1_enabled"),
+    ]
+
+    def assert_controls(available):
+        for domain, key in controls:
+            assert (
+                hass.states.get(eid(dev, domain, key)).state != "unavailable"
+            ) is available
+
+    assert dev.feeder.snapshot_source == "restored"
+    assert_controls(False)
+    assert hass.states.get(eid(dev, "button", "feed")).state != "unavailable"
+    assert hass.states.get(eid(dev, "number", "manual_portions")).state == "8"
+    before_writes = [list(w) for w in writes]
+    await call("button", "press", "acknowledge_restored")
+    assert_controls(True)
+    assert writes == before_writes  # acknowledgement never dispatches a command
+    dev.feeder.native_arm_seconds = 0.001
+    await call("button", "press", "acknowledge_restored")
+    import asyncio
+
+    await asyncio.sleep(0.01)
+    await hass.async_block_till_done()
+    assert_controls(False)
+    await call("button", "press", "acknowledge_restored")
+    dev.feeder.revision += 1
+    dev.feeder.publish()
+    await hass.async_block_till_done()
+    assert_controls(False)
+    dev.feeder.received({"1": dev.feeder.raw}, dev.generation)
+    await hass.async_block_till_done()
+    assert_controls(True)
+    assert writes == before_writes
     assert registry.async_get(third.entity_id).hidden_by == er.RegistryEntryHider.USER
     assert (
         len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 44
